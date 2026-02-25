@@ -1,0 +1,34 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "my-app",
+	"compatibility_date": "2025-12-30",
+	"compatibility_flags": [
+		// Enable Node.js API
+		// see https://developers.cloudflare.com/workers/configuration/compatibility-flags/#nodejs-compatibility-flag
+		"nodejs_compat",
+		// Allow to fetch URLs in your app
+		// see https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public
+		"global_fetch_strictly_public",
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS",
+	},
+	"d1_databases": [
+		{
+			"binding": "baywheels",
+			"database_id": "1a853d41-9f8f-4963-a9f8-6d327e2831ee",
+			"preview_database_id": "1a853d41-9f8f-4963-a9f8-6d327e2831ee",
+			"remote": true,
+			"migrations_dir": "./migrations",
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "baywheel_kv",
+			"id": "4ba5cf8ffada4206a7a0a26843b0b524",
+			"remote": true
+		}
+	]
+}

@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.open-next
+/utils/data/
+/utils/migrations/
+/utils/node_modules/
+/utils/seeds/
+/utils/*.csv
+/.idea/
+/.next/
+/.wrangler/
+/*.sql
