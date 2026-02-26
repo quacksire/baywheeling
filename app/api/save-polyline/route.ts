@@ -3,11 +3,11 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { 
-      ride_id: string; 
-      start_lon: number; 
-      start_lat: number; 
-      end_lon: number; 
+    const body = await request.json() as {
+      ride_id: string;
+      start_lon: number;
+      start_lat: number;
+      end_lon: number;
       end_lat: number;
       start_station_id: string;
       end_station_id: string;
@@ -33,14 +33,14 @@ export async function POST(request: NextRequest) {
     }
 
     const routeKey = `route:${start_station_id}:${end_station_id}`;
-    
+
     // Check KV first
     let polyline = await kv.get(routeKey);
 
     if (!polyline) {
       // Fetch from OSRM
-      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${start_lon},${start_lat};${end_lon},${end_lat}?overview=full&geometries=polyline`;
-      
+      const osrmUrl = `https://router.project-osrm.org/route/v1/cycling/${start_lon},${start_lat};${end_lon},${end_lat}?overview=full&geometries=polyline`;
+
       let osrmResponse;
       try {
         osrmResponse = await fetch(osrmUrl);

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const stations = result.results || [];
 
     // Cache each station in KV
-    const kvPromises = stations.map(async (station) => {
+    const kvPromises = stations.map(async (station: any) => {
       const stationKey = `station:${station.station_id}`;
       return kv.put(stationKey, station.station_name);
     });

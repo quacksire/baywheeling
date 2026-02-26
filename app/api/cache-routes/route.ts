@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
             );
 
             // Cache batch in parallel
-            const kvPromises = batch.map(async (route) => {
+            const kvPromises = batch.map(async (route: any) => {
               const routeKey = `route:${route.start_station_id}:${route.end_station_id}`;
               return kv.put(routeKey, route.route_polyline);
             });

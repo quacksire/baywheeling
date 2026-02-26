@@ -8,18 +8,8 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useMap, MapPopup, MapMarker, MarkerContent, MarkerLabel } from "@/components/ui/map";
 import { DeckGLRoutes } from "@/components/deck-gl-routes";
 import { StationInfoContent } from "@/components/station-info-content";
-import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
-import {Card, CardContent, CardFooter, CardTitle} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
-import { ChartContainer, ChartTooltip, ChartLegend } from "@/components/ui/chart";
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Spinner } from "@/components/ui/spinner";
-import { Drawer, DrawerTrigger, DrawerContent } from "@/components/ui/drawer";
+import { Drawer, DrawerTrigger, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import { AboutInfo } from "@/components/about-info";
 
 interface Ride {
     ride_id: string;
@@ -64,14 +54,23 @@ interface StationInfo {
     };
 }
 
-const CENTER_SF = [-122.4194, 37.7749];
-const CENTER_OAK = [-122.2711, 37.8044];
-const CENTER_SJ = [-121.8863, 37.3382];
+interface SelectedPoint {
+    id: string;
+    name: string;
+    coordinates: [number, number];
+    [key: string]: any;
+}
+
+
 
 
 export function StationLayer() {
      const { map, isLoaded } = useMap();
+     const [isMounted, setIsMounted] = useState(false);
      const isDesktop = useMediaQuery("(min-width: 768px)");
+    const snapPoints = ['212px', '355px', 1];
+    const [snap, setSnap] = useState<number | string | null>(snapPoints[0]);
+
      const [currentMonth, setCurrentMonth] = useState<{ year: string; month: string } | null>(null);
      const id = useId();
      const sourceId = `station-source-${id}`;
@@ -88,8 +87,7 @@ export function StationLayer() {
      const [stats, setStats] = useState<StationStats | null>(null);
      const [selectedYear, setSelectedYear] = useState<string>('');
      const [selectedMonthNum, setSelectedMonthNum] = useState<string>('');
-     const [drawerOpen, setDrawerOpen] = useState(false);
-     const [drawerHeight, setDrawerHeight] = useState<'sm' | 'md' | 'lg'>('md');
+     const [drawerOpen, setDrawerOpen] = useState(true);
      const selectedMonth = selectedYear && selectedMonthNum ? `${selectedYear}-${selectedMonthNum}` : '';
 
      // Calculate current month (previous month from today)
@@ -153,11 +151,12 @@ export function StationLayer() {
     useEffect(() => {
         if (!map || !isLoaded) return;
 
-        console.log(gbfsStationInfoToGeoJSON(baywheelStations))
+        const geoData = gbfsStationInfoToGeoJSON(baywheelStations as any);
+        console.log(geoData);
 
         map.addSource(sourceId, {
             type: "geojson",
-            data: gbfsStationInfoToGeoJSON(baywheelStations),
+            data: geoData,
         });
 
         map.addLayer({
@@ -238,7 +237,20 @@ export function StationLayer() {
         if (selectedPoint) {
             setDrawerOpen(true);
         }
-    }, [selectedPoint]);
+        if (!isDesktop) {
+            setSnap(snapPoints[2]); // Open at middle snap point on mobile
+        }
+    }, [selectedPoint, isDesktop]);
+
+
+    // Reset to current month when station is selected
+    useEffect(() => {
+        if (selectedPoint) {
+            const current = getCurrentMonth();
+            setSelectedYear(current.year);
+            setSelectedMonthNum(current.month);
+        }
+    }, [selectedPoint, getCurrentMonth]);
 
     // Initialize current month on mount
     useEffect(() => {
@@ -269,7 +281,7 @@ export function StationLayer() {
         // Fetch rides
         fetch(ridesUrl.toString())
             .then(res => res.json())
-            .then(data => {
+            .then((data: any) => {
                 if (data.error) {
                     console.error('API Error:', data.error);
                     setRides([]);
@@ -430,7 +442,7 @@ export function StationLayer() {
                     { signal }
                 )
                     .then(res => res.json())
-                    .then(data => {
+                    .then((data: any) => {
                         if (signal.aborted) return;
 
                         if (data.routes?.length > 0) {
@@ -474,11 +486,9 @@ export function StationLayer() {
         };
     }, [rides, loadingRides, stationMap, selectedPoint?.id]);
 
-
-
     return (
-        <>
-            {/* Ping animation marker on selected station */}
+         <>
+             {/* Ping animation marker on selected station */}
             {selectedPoint && (
                 <MapMarker
                     longitude={selectedPoint.coordinates[0]}
@@ -504,17 +514,22 @@ export function StationLayer() {
              )}
 
 
-            {/* Station info drawer (always open on desktop, controlled on mobile) */}
+            {/* Station info drawer */}
                 <Drawer
-                    open={isDesktop ? true : drawerOpen}
-                    onOpenChange={isDesktop ? undefined : setDrawerOpen}
+                    open={drawerOpen}
+                    onOpenChange={setDrawerOpen}
                     direction={isDesktop ? "left" : undefined}
                     modal={false}
-                    dismissible={true}
-                    disablePreventScroll
-                    {...(!isDesktop ? { snapToSequentialPoint: true, snapPoints: ['148px', '355px', 1] } : {})}
+                    dismissible={false}
+                    disablePreventScroll={true}
+                    {...(!isDesktop && {
+                        snapPoints: snapPoints,
+                        activeSnapPoint: snap,
+                        setActiveSnapPoint: setSnap
+                    })}
                 >
-                    <DrawerContent className={`${isDesktop ? 'p-4 w-96' : 'w-full mx-auto px-4 pb-4'}`}>
+                    <DrawerContent className={`${isDesktop ? 'p-4 w-96 overflow-y-auto max-h-screen' : 'w-full mx-auto px-4 pb-4 overflow-y-scroll'}`}>
+                        <DrawerTitle className="sr-only">{selectedPoint?.name || 'Station Info'}</DrawerTitle>
                         {selectedPoint ? (
                             <StationInfoContent
                                 stationName={selectedPoint.name}
@@ -531,66 +546,7 @@ export function StationLayer() {
                                 onNextMonth={handleNextMonth}
                             />
                         ) : (
-                            <div className="space-y-8 text-gray-300 text-sm leading-relaxed">
-                                <div>
-                                    <h2 className="text-2xl font-semibold text-white mb-1">Baywheeling</h2>
-                                    <p className="text-gray-400 text-sm">Exploring Bay Area bike-share patterns with Bay Wheel open data</p>
-                                </div>
-
-                                <section className="space-y-3">
-                                    <h3 className="text-lg font-semibold text-white">About</h3>
-                                    <p>
-                                        Baywheel.ing visualizes BayWheels trip patterns using <a className="underline decoration-dotted cursor-pointer">anonymized historical system data published by Lyft.</a>
-                                    </p>
-                                </section>
-
-                                <section className="space-y-3">
-                                    <h3 className="text-lg font-semibold text-white">How It Works</h3>
-                                    <p>
-                                        Click any station to view stats. Browse different months to spot seasonal patterns.
-                                    </p>
-
-                                    {/* Explore the cities grid */}
-                                    <div className="pt-2">
-                                        <h4 className="text-sm font-semibold text-gray-300 mb-2">Explore the cities</h4>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <Button onClick={() => map?.flyTo({ center: CENTER_SF as [number, number], zoom: 12.5, duration: 1000 })} variant="outline" size="sm" className="cursor-pointer hover:bg-gray-900 hover:text-white transition-colors">
-                                                San Francisco
-                                            </Button>
-
-                                            <Button onClick={() => map?.flyTo({ center: CENTER_OAK as [number, number], zoom: 12.5, duration: 1000 })} variant="outline" size="sm" className="cursor-pointer hover:bg-gray-900 hover:text-white transition-colors">
-                                                Oakland
-                                            </Button>
-
-                                            <Button onClick={() => map?.flyTo({ center: CENTER_SJ as [number, number], zoom: 13, duration: 1000 })} variant="outline" size="sm" className="cursor-pointer hover:bg-gray-900 hover:text-white transition-colors">
-                                                San Jose
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <section className="space-y-3">
-                                    <h3 className="text-lg font-semibold text-white">Limitations</h3>
-                                    <p className="text-xs">
-                                        <strong>Route lines</strong> are computed using <a className="underline decoration-dotted cursor-pointer">OSRM</a>, the only free open-source routing engine I could find. It only supports <code>driving</code> and <code>walking</code> modes. I chose <code>driving</code> because walking had more issues. If you have another free and simple option, feel free to open an issue.
-                                    </p>
-                                </section>
-
-                                <section className="space-y-3">
-                                    <h3 className="text-lg font-semibold text-white">Built With</h3>
-                                    <ul className="space-y-2 text-xs">
-                                        <li>
-                                            <a className="underline decoration-dotted cursor-pointer">React/Next.js</a> with <a className="underline decoration-dotted cursor-pointer">shadcn/ui</a> and <a className="underline decoration-dotted cursor-pointer">Tailwind</a>. <a className="underline decoration-dotted cursor-pointer">MapLibre GL</a> (via <a className="underline decoration-dotted cursor-pointer">mapcn</a> and <a className="underline decoration-dotted cursor-pointer">carto</a> layer) for mapping, <a className="underline decoration-dotted cursor-pointer">Deck.gl</a> for route rendering, <a className="underline decoration-dotted cursor-pointer">Recharts</a> for charts.
-                                        </li>
-                                        <li>
-                                            Hosted on <a className="underline decoration-dotted cursor-pointer">Cloudflare</a> via <a className="underline decoration-dotted cursor-pointer">opennext</a> and edge deployed with <a className="underline decoration-dotted cursor-pointer">Workers</a>. Routes cached in <a className="underline decoration-dotted cursor-pointer">D1</a>, stats computed on-the-fly with <a className="underline decoration-dotted cursor-pointer">Workers</a> and streamed to the client.
-                                        </li>
-                                        <li>
-                                            <a className="underline decoration-dotted cursor-pointer">Deploy your own</a> or check out the code on <a href="" className="underline decoration-dotted cursor-pointer">GitHub</a>.
-                                        </li>
-                                    </ul>
-                                </section>
-                            </div>
+                            <AboutInfo isDesktop={isDesktop} />
                         )}
 
                         <div className="mt-8 pt-6">
@@ -608,8 +564,10 @@ export function StationLayer() {
                                             About <span className="mx-2">·</span>
                                         </a>
                                     )}
-
-                                    <span>Not affiliated with Baywheels, Lyft, or Motivate</span>
+                                    <span>Not affiliated with BayWheels, Lyft, MTC, or Motivate.</span>
+                                </div>
+                                <div>
+                                    <span><a href={"https://samjeffs.net"} target={'_blank'}>made with ♥️ in 🌉 by sam 🐱</a></span>
                                 </div>
                             </div>
                         </div>

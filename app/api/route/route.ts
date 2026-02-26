@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, context: any) {
 
         if (result?.route_polyline) {
           console.log('Route found in D1');
-          polylineStr = result.route_polyline;
+          polylineStr = result.route_polyline as string;
           const geojsonGeometry = polyline.toGeoJSON(polylineStr);
           return NextResponse.json({
             routes: [
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest, context: any) {
     }
 
     // Fetch from OSRM if not in cache
-    const url = `https://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=polyline`;
+    const url = `https://router.project-osrm.org/route/v1/cycling/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=polyline`;
 
     console.log('Fetching route from OSRM:', url);
 
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest, context: any) {
       throw new Error(`OSRM API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
 
     if (data.routes?.length > 0) {
       const route = data.routes[0];
