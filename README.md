@@ -34,7 +34,6 @@ If you have another free and simple option, feel free to open an issue.
 - **[Cloudflare D1](https://developers.cloudflare.com/d1)** — SQLite database for caching computed route polylines, reducing API calls to OSRM
 - **[Cloudflare KV](https://developers.cloudflare.com/kv)** — Key-value store for rapid access to station metadata and frequently-requested aggregated trip statistics
 - [Cloudflare](https://cloudflare.com) via [opennext](https://opennext.js.org) for hosting
-- [Deploy your own](https://github.com/samwarnick/baywheeling) or check out the code on [GitHub](https://github.com/samwarnick/baywheeling)
 
 ## Getting Started
 
@@ -67,10 +66,9 @@ If you have another free and simple option, feel free to open an issue.
 
 ## Data Ingestion
 
-<Alert type="info">
-The app relies on historical trip data from Lyft's Bay Wheels system. This data is not included in the repository due to size, but you can easily load it yourself using the steps below.
-Make you run the `init` script before loading data, as it sets up the D1 database. KV should just work without initialization, but D1 needs the schema to be created first.
-</Alert>
+> [!NOTE]  
+> The app relies on historical trip data from Lyft's Bay Wheels system. This data is not included in the repository due to size, but you can easily load it yourself using the steps below. 
+> Make you run the `init` script before loading data, as it sets up the D1 database. KV should just work without initialization, but D1 needs the schema to be created first.
 
 To load Bay Wheels trip data into D1:
 
@@ -93,18 +91,3 @@ To load Bay Wheels trip data into D1:
    ./utils/load-seeds.sh
    ```
    This loads the generated SQL into your Cloudflare D1 database.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

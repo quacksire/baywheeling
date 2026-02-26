@@ -110,7 +110,7 @@ export function AboutInfo({ isDesktop }: StationInfoDrawerProps) {
                     <li><a className="underline decoration-dotted cursor-pointer" href="https://cloudflare.com" target="_blank" rel="noopener noreferrer">Cloudflare</a> via <a className="underline decoration-dotted cursor-pointer" href="https://opennext.js.org" target="_blank" rel="noopener noreferrer">opennext</a> for hosting</li>
                     <li><a className="underline decoration-dotted cursor-pointer" href="https://workers.cloudflare.com" target="_blank" rel="noopener noreferrer">Cloudflare Workers</a> for edge compute</li>
                     <li><a className="underline decoration-dotted cursor-pointer" href="https://developers.cloudflare.com/d1" target="_blank" rel="noopener noreferrer">Cloudflare D1</a> for caching routes</li>
-                    <li><a className="underline decoration-dotted cursor-pointer" href="https://github.com/samwarnick/baywheeling" target="_blank" rel="noopener noreferrer">Deploy your own</a> or check out the code on <a href="https://github.com/samwarnick/baywheeling" className="underline decoration-dotted cursor-pointer" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+                    <li className={'mt-4 mb-[-5]'}>This project is also open source, you can check out the code on <a href="https://github.com/quacksire/baywheeling" className="underline decoration-dotted cursor-pointer" target="_blank" rel="noopener noreferrer">GitHub</a></li>
                 </ul>
             </section>
         </div>
