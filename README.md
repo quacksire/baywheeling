@@ -50,6 +50,7 @@ If you have another free and simple option, feel free to open an issue.
    git clone https://github.com/samwarnick/baywheeling
    cd baywheeling
    pnpm install
+   pnpm run init
    ```
 
 2. **Run the development server:**
@@ -65,6 +66,11 @@ If you have another free and simple option, feel free to open an issue.
    This builds and deploys to Cloudflare Pages, Workers, D1, and KV using the bindings configured in `wrangler.jsonc`.
 
 ## Data Ingestion
+
+<Alert type="info">
+The app relies on historical trip data from Lyft's Bay Wheels system. This data is not included in the repository due to size, but you can easily load it yourself using the steps below.
+Make you run the `init` script before loading data, as it sets up the D1 database. KV should just work without initialization, but D1 needs the schema to be created first.
+</Alert>
 
 To load Bay Wheels trip data into D1:
 
