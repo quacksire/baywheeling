@@ -41,12 +41,16 @@ yarn-error.log*
 next-env.d.ts
 
 .open-next
-/utils/data/
-/utils/migrations/
+/utils/data/*
+/utils/migrations/*
 /utils/node_modules/
 /utils/seeds/
 /utils/*.csv
 /.idea/
 /.next/
 /.wrangler/
-/*.sql
+/migrations/*
+/utils/rides.seed.sql
+/utils/data
+
+

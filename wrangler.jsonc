@@ -9,11 +9,11 @@
 		"nodejs_compat",
 		// Allow to fetch URLs in your app
 		// see https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public
-		"global_fetch_strictly_public",
+		"global_fetch_strictly_public"
 	],
 	"assets": {
 		"directory": ".open-next/assets",
-		"binding": "ASSETS",
+		"binding": "ASSETS"
 	},
 	"d1_databases": [
 		{
@@ -21,7 +21,7 @@
 			"database_id": "1a853d41-9f8f-4963-a9f8-6d327e2831ee",
 			"preview_database_id": "1a853d41-9f8f-4963-a9f8-6d327e2831ee",
 			"remote": true,
-			"migrations_dir": "./migrations",
+			"migrations_dir": "./migrations"
 		}
 	],
 	"kv_namespaces": [
