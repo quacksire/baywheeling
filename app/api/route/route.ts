@@ -3,12 +3,14 @@ import { polyline } from '@/lib/polyline';
 import {getCloudflareContext} from "@opennextjs/cloudflare";
 
 export async function GET(request: NextRequest, context: any) {
-  const { searchParams } = new URL(request.url);
-  const startLon = searchParams.get('start_lon');
-  const startLat = searchParams.get('start_lat');
-  const endLon = searchParams.get('end_lon');
-  const endLat = searchParams.get('end_lat');
-  const rideId = searchParams.get('ride_id');
+   const { searchParams } = new URL(request.url);
+   const startLon = searchParams.get('start_lon');
+   const startLat = searchParams.get('start_lat');
+   const endLon = searchParams.get('end_lon');
+   const endLat = searchParams.get('end_lat');
+   const startStationId = searchParams.get('start_station_id');
+   const endStationId = searchParams.get('end_station_id');
+   const rideId = searchParams.get('ride_id');
 
   if (!startLon || !startLat || !endLon || !endLat) {
     return NextResponse.json(
@@ -18,31 +20,44 @@ export async function GET(request: NextRequest, context: any) {
   }
 
   try {
-    const { env } = getCloudflareContext();
-    const db = env.baywheels;
-    let polylineStr: string | null = null;
+     const { env } = getCloudflareContext();
+     const db = env.baywheels;
+     const kv = env.baywheel_kv;
+     let polylineStr: string | null = null;
 
     // Try to get from D1 cache first (only if ride_id is provided)
     if (db && rideId) {
       try {
-        const result = await db
-          .prepare('SELECT route_polyline FROM rides WHERE ride_id = ?')
-          .bind(rideId)
-          .first();
+        // Query all month tables to find the ride
+        const tableQuery = `
+          SELECT name FROM sqlite_master 
+          WHERE type='table' AND name LIKE 'rides_%'
+          ORDER BY name DESC
+        `;
+        
+        const tableResult = await db.prepare(tableQuery).all() as any;
+        const tables = (tableResult.results || []).map((r: any) => r.name);
+        
+        for (const table of tables) {
+          const result = await db
+            .prepare(`SELECT route_polyline FROM ${table} WHERE ride_id = ?`)
+            .bind(rideId)
+            .first();
 
-        if (result?.route_polyline) {
-          console.log('Route found in D1');
-          polylineStr = result.route_polyline as string;
-          const geojsonGeometry = polyline.toGeoJSON(polylineStr);
-          return NextResponse.json({
-            routes: [
-              {
-                geometry: geojsonGeometry,
-                duration: 0,
-                distance: 0
-              }
-            ]
-          });
+          if (result?.route_polyline) {
+            console.log('Route found in D1');
+            polylineStr = result.route_polyline as string;
+            const geojsonGeometry = polyline.toGeoJSON(polylineStr);
+            return NextResponse.json({
+              routes: [
+                {
+                  geometry: geojsonGeometry,
+                  duration: 0,
+                  distance: 0
+                }
+              ]
+            });
+          }
         }
       } catch (dbError) {
         console.warn('D1 cache read error:', dbError);
@@ -72,17 +87,48 @@ export async function GET(request: NextRequest, context: any) {
     if (data.routes?.length > 0) {
       const route = data.routes[0];
 
-      // Save polyline to D1 - only if ride_id is provided
-      if (db && rideId && route.geometry) {
-        try {
-          await db
-            .prepare('UPDATE rides SET route_polyline = ? WHERE ride_id = ?')
-            .bind(route.geometry, rideId)
-            .run();
-          console.log('Route cached in D1');
-        } catch (dbError) {
-          console.warn('D1 cache write error:', dbError);
+      // Save polyline to D1 and KV - only if ride_id is provided
+      if (rideId && route.geometry) {
+        // Update all month tables (since we don't know which one has the ride)
+        if (db) {
+          try {
+            const tableQuery = `
+              SELECT name FROM sqlite_master 
+              WHERE type='table' AND name LIKE 'rides_%'
+            `;
+            
+            const tableResult = await db.prepare(tableQuery).all() as any;
+            const tables = (tableResult.results || []).map((r: any) => r.name);
+            
+            let updated = false;
+            for (const table of tables) {
+              const result = await db
+                .prepare(`UPDATE ${table} SET route_polyline = ? WHERE ride_id = ?`)
+                .bind(route.geometry, rideId)
+                .run();
+              if ((result as any).success) {
+                updated = true;
+              }
+            }
+            
+            if (updated) {
+              console.log('Route cached in D1');
+            }
+          } catch (dbError) {
+            console.warn('D1 cache write error:', dbError);
+          }
         }
+
+        // Also cache in KV by station pair (start_station_id:end_station_id)
+         if (kv && startStationId && endStationId) {
+           try {
+             const routeKey = `route:${startStationId}:${endStationId}`;
+             await kv.put(routeKey, route.geometry);
+             console.log('Route cached in KV with key:', routeKey);
+           } catch (kvError) {
+             console.warn('KV cache write error:', kvError);
+           }
+         }
       }
 
       // Convert polyline to GeoJSON for response

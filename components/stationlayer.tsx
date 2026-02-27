@@ -381,6 +381,7 @@ export function StationLayer() {
         rides.forEach((ride) => {
             if (ride.route_polyline && typeof ride.route_polyline === 'string' && ride.route_polyline.length > 0) {
                 cachedRides.push(ride);
+                if (map) map.triggerRepaint();
             } else {
                 uncachedRides.push(ride);
             }
@@ -423,7 +424,7 @@ export function StationLayer() {
         });
         setCachedRoutes(newCached);
         setRoutesLoading(cachedRides.length);
-        if (map) map.triggerRepaint();
+
 
         // Concurrency limiter - limit to 2 parallel requests for uncached rides only
         // OSRM has strict rate limits, so we keep this very low
@@ -459,7 +460,7 @@ export function StationLayer() {
                 setTimeout(() => {
                     // Fetch from API (will check D1 cache and save if needed)
                     fetch(
-                        `/api/route?start_lon=${startStation.lon}&start_lat=${startStation.lat}&end_lon=${endStation.lon}&end_lat=${endStation.lat}&ride_id=${encodeURIComponent(ride.ride_id)}`,
+                        `/api/route?start_lon=${startStation.lon}&start_lat=${startStation.lat}&end_lon=${endStation.lon}&end_lat=${endStation.lat}&start_station_id=${encodeURIComponent(ride.start_station_id || '')}&end_station_id=${encodeURIComponent(ride.end_station_id || '')}&ride_id=${encodeURIComponent(ride.ride_id)}`,
                         { signal }
                     )
                         .then(res => res.json())
@@ -508,6 +509,13 @@ export function StationLayer() {
             abortController.abort();
         };
     }, [rides, loadingRides, stationMap, selectedPoint?.id]);
+
+    useEffect(() => {
+        // Trigger repaint when cachedRoutes changes to ensure deck.gl updates
+        if (map) {
+            map.triggerRepaint();
+        }
+    }, [cachedRoutes]);
 
     return (
          <>
