@@ -6,9 +6,6 @@ export async function GET(request: NextRequest) {
   const stationId = searchParams.get('station_id');
   const yearMonth = searchParams.get('year_month'); // YYYY-MM format (required)
 
-  const start = `${yearMonth}-01`;
-  const end = `${yearMonth}-31`; // safe upper bound
-
   if (!stationId) {
     return NextResponse.json(
       { error: 'station_id is required' },
@@ -49,9 +46,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const whereClause =
-        `WHERE start_station_id = ? AND started_at >= ? AND started_at < date(?, '+1 month')`;
-    const params = [stationId, start, start];
+    const tableName = `rides_${yearMonth.replace('-', '')}`;
+    const whereClause = `WHERE start_station_id = ?`;
+    const params = [stationId];
 
     // Stream results as they become available
     const stream = new ReadableStream({
@@ -60,6 +57,7 @@ export async function GET(request: NextRequest) {
           const chunks: string[] = [];
 
           // Get overall stats first (fastest query)
+          console.log('Fetching stats from table:', tableName);
           const result = await db
             .prepare(
               `SELECT
@@ -67,12 +65,13 @@ export async function GET(request: NextRequest) {
                 SUM(CASE WHEN member_casual = 'member' THEN 1 ELSE 0 END) as member_count,
                 SUM(CASE WHEN member_casual = 'casual' THEN 1 ELSE 0 END) as casual_count,
                 SUM(CASE WHEN end_station_id = start_station_id THEN 1 ELSE 0 END) as false_starts
-               FROM rides 
+               FROM ${tableName}
                ${whereClause}`
             )
             .bind(...params)
             .first();
 
+          console.log('Stats result:', result);
           const statsLine = JSON.stringify({ type: 'stats', data: result }) + '\n';
           chunks.push(statsLine);
           controller.enqueue(new TextEncoder().encode(statsLine));
@@ -81,7 +80,7 @@ export async function GET(request: NextRequest) {
           const rideableTypes = await db
             .prepare(
               `SELECT rideable_type, COUNT(*) as count
-               FROM rides 
+               FROM ${tableName}
                ${whereClause}
                GROUP BY rideable_type
                ORDER BY count DESC`
@@ -97,8 +96,8 @@ export async function GET(request: NextRequest) {
           const dayOfWeek = await db
             .prepare(
               `SELECT strftime('%w', substr(started_at, 1, 10)) as day_num, COUNT(*) as count
-               FROM rides
-                 ${whereClause}
+               FROM ${tableName}
+               ${whereClause}
                GROUP BY day_num
                ORDER BY CAST(day_num as INTEGER)`
             )
@@ -113,7 +112,7 @@ export async function GET(request: NextRequest) {
           const destinations = await db
             .prepare(
               `SELECT end_station_name, COUNT(*) as count
-               FROM rides 
+               FROM ${tableName}
                ${whereClause}
                GROUP BY end_station_name
                ORDER BY count DESC
@@ -130,8 +129,8 @@ export async function GET(request: NextRequest) {
           const busiestHours = await db
             .prepare(
               `SELECT substr(started_at, 12, 2) as hour, COUNT(*) as count
-               FROM rides
-                 ${whereClause}
+               FROM ${tableName}
+               ${whereClause}
                GROUP BY hour
                ORDER BY CAST(hour as INTEGER)`
             )

@@ -51,7 +51,7 @@ export async function GET(request: NextRequest, context: any) {
 
     // Fetch from OSRM if not in cache
     const url = `https://router.project-osrm.org/route/v1/cycling/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=polyline`;
-
+    
     console.log('Fetching route from OSRM:', url);
 
     const response = await fetch(url, {

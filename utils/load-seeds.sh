@@ -1,15 +1,20 @@
 #!/bin/bash
 
-# Load all SQL seed files into D1 in order
+# Convert CSVs and load seeds by year-month
 
 set -e
 
-echo "Loading all seed files into baywheels D1..."
+echo "Converting CSVs to monthly SQL..."
+python3 csv_to_monthly_sql.py
 
-for file in seeds/all_rides_part_*.sql; do
+echo "Creating month tables in D1..."
+npx wrangler d1 execute baywheels --remote --file "seeds_by_month_csv/00_create_tables.sql" --yes
+
+echo "Loading month-specific seed files into baywheels D1..."
+
+for file in seeds_by_month_csv/rides_*.sql; do
     if [ -f "$file" ]; then
         echo "Loading $file..."
-        # Change the command to use the correct D1 database name, currently set to "baywheels"
         npx wrangler d1 execute baywheels --remote --file "$file" --yes
     fi
 done

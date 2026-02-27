@@ -5,11 +5,12 @@ import { PathLayer } from '@deck.gl/layers';
 import { useMap } from '@/components/ui/map';
 
 interface RouteData {
-  rideId: string;
+  routeKey: string;
   coordinates: [number, number][];
   duration: number;
   distance: number;
   endStationName: string;
+  rideCount: number;
 }
 
 interface DeckGLRoutesProps {
@@ -38,8 +39,17 @@ export function DeckGLRoutes({
     // Convert routes Map to array format for deck.gl
     const routesArray = Array.from(routes.values()).map((route) => ({
       path: route.coordinates,
-      id: route.rideId,
+      id: route.routeKey,
+      rideCount: route.rideCount,
     }));
+
+    // Calculate width based on number of rides using the route
+    const getRouteWidth = (d: any) => {
+      // Base width of 1, increases slightly with rideCount
+      // Logarithmic scaling with small multiplier for monthly data
+      // 2 rides = 1.07x, 5 rides = 1.16x, 10 rides = 1.23x
+      return 1 + Math.log(d.rideCount) * 0.1;
+    };
 
     // Create or update deck.gl instance
     if (!deckRef.current) {
@@ -64,7 +74,7 @@ export function DeckGLRoutes({
             widthMinPixels: 2,
             getPath: (d: any) => d.path,
             getColor: () => [color[0], color[1], color[2], opacity],
-            getWidth: () => 1,
+            getWidth: getRouteWidth,
           }),
         ],
       });
@@ -80,7 +90,7 @@ export function DeckGLRoutes({
             widthMinPixels: 2,
             getPath: (d: any) => d.path,
             getColor: () => [color[0], color[1], color[2], opacity],
-            getWidth: () => 1,
+            getWidth: getRouteWidth,
           }),
         ],
       });

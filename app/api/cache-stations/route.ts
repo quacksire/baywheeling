@@ -14,15 +14,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch all stations from D1
+    // Get all month tables
+    const tableQuery = `
+      SELECT name FROM sqlite_master 
+      WHERE type='table' AND name LIKE 'rides_%'
+      ORDER BY name DESC
+    `;
+    
+    const tableResult = await db.prepare(tableQuery).all() as any;
+    const tables = (tableResult.results || []).map((r: any) => r.name);
+
+    if (tables.length === 0) {
+      return NextResponse.json({ cached: 0 });
+    }
+
+    // Build union of all month tables
+    const selectStatements = tables.map(
+      (table) => `SELECT start_station_id as station_id, start_station_name as station_name FROM ${table}
+       UNION
+       SELECT end_station_id, end_station_name FROM ${table}`
+    );
+
     const query = `
       SELECT DISTINCT 
         station_id,
         station_name
       FROM 
-        (SELECT start_station_id as station_id, start_station_name as station_name FROM rides
-         UNION
-         SELECT end_station_id, end_station_name FROM rides)
+        (${selectStatements.join(' UNION ')})
       WHERE station_id IS NOT NULL
       ORDER BY station_id
     `;

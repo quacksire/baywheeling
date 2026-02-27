@@ -15,6 +15,7 @@ interface Ride {
     ride_id: string;
     rideable_type: string;
     started_at: string;
+    start_station_name?: string;
     end_station_name: string;
     start_station_id?: string;
     end_station_id?: string;
@@ -28,11 +29,12 @@ interface RouteData {
 }
 
 interface CachedRoute {
-    rideId: string;
+    routeKey: string; // start_station_id:end_station_id
     coordinates: [number, number][];
     duration: number;
     distance: number;
     endStationName: string;
+    rideCount: number; // Number of rides using this route
 }
 
 interface StationStats {
@@ -389,8 +391,19 @@ export function StationLayer() {
         setCachedRoutes(new Map());
         console.log('Routes loaded:', rides.length, 'Cached count:', cachedRides.length, 'Uncached count:', uncachedRides.length);
 
-        // Add all cached routes immediately
+        // Group rides by route (start_station_id:end_station_id) to count duplicates
+        const routeGroups = new Map<string, Ride[]>();
         cachedRides.forEach((ride) => {
+            const routeKey = `${ride.start_station_id}:${ride.end_station_id}`;
+            if (!routeGroups.has(routeKey)) {
+                routeGroups.set(routeKey, []);
+            }
+            routeGroups.get(routeKey)!.push(ride);
+        });
+
+        // Add all cached routes immediately
+        routeGroups.forEach((groupRides, routeKey) => {
+            const ride = groupRides[0]; // Use first ride as template
             try {
                 const geojsonGeometry = polyline.toGeoJSON(ride.route_polyline!);
                 const routeData = {
@@ -398,20 +411,22 @@ export function StationLayer() {
                     duration: 0,
                     distance: 0,
                 };
-                newCached.set(ride.ride_id, {
-                    rideId: ride.ride_id,
+                newCached.set(routeKey, {
+                    routeKey,
                     ...routeData,
                     endStationName: ride.end_station_name,
+                    rideCount: groupRides.length,
                 });
             } catch (err) {
-                console.warn('Error converting polyline for ride', ride.ride_id, err);
+                console.warn('Error converting polyline for route', routeKey, err);
             }
         });
         setCachedRoutes(newCached);
         setRoutesLoading(cachedRides.length);
         if (map) map.triggerRepaint();
 
-        // Concurrency limiter - limit to 10 parallel requests for uncached routes only
+        // Concurrency limiter - limit to 2 parallel requests for uncached rides only
+        // OSRM has strict rate limits, so we keep this very low
         const concurrencyLimit = 10;
         let activeRequests = 0;
         let queueIndex = 0;
@@ -419,63 +434,71 @@ export function StationLayer() {
         const processQueue = () => {
             while (activeRequests < concurrencyLimit && queueIndex < uncachedRides.length) {
                 const ride = uncachedRides[queueIndex];
+                const routeKey = `${ride.start_station_id}:${ride.end_station_id}`;
                 queueIndex++;
 
-                if (!ride.start_station_id || !ride.end_station_id) {
-                    setRoutesLoading(prev => prev + 1);
-                    continue;
-                }
+                let startStation = ride.start_station_id ? stationMap[ride.start_station_id] : undefined;
+                 let endStation = ride.end_station_id ? stationMap[ride.end_station_id] : undefined;
 
-                const startStation = stationMap[ride.start_station_id];
-                const endStation = stationMap[ride.end_station_id];
+                 // If stations not found by ID, try to find by name in stationMap
+                 if (!startStation && ride.start_station_name) {
+                     startStation = Object.values(stationMap).find(s => s.name === ride.start_station_name);
+                 }
+                 if (!endStation && ride.end_station_name) {
+                     endStation = Object.values(stationMap).find(s => s.name === ride.end_station_name);
+                 }
 
-                if (!startStation || !endStation) {
-                    setRoutesLoading(prev => prev + 1);
-                    continue;
-                }
+                 if (!startStation || !endStation) {
+                      setRoutesLoading(prev => prev + 1);
+                      continue;
+                  }
 
                 activeRequests++;
 
-                // Fetch from API (will check D1 cache and save if needed)
-                fetch(
-                    `/api/route?start_lon=${startStation.lon}&start_lat=${startStation.lat}&end_lon=${endStation.lon}&end_lat=${endStation.lat}&ride_id=${encodeURIComponent(ride.ride_id)}`,
-                    { signal }
-                )
-                    .then(res => res.json())
-                    .then((data: any) => {
-                        if (signal.aborted) return;
+                // Add 500ms delay between request initiations to respect OSRM rate limits
+                setTimeout(() => {
+                    // Fetch from API (will check D1 cache and save if needed)
+                    fetch(
+                        `/api/route?start_lon=${startStation.lon}&start_lat=${startStation.lat}&end_lon=${endStation.lon}&end_lat=${endStation.lat}&ride_id=${encodeURIComponent(ride.ride_id)}`,
+                        { signal }
+                    )
+                        .then(res => res.json())
+                        .then((data: any) => {
+                            if (signal.aborted) return;
 
-                        if (data.routes?.length > 0) {
-                            const route = data.routes[0];
-                            const routeData = {
-                                coordinates: route.geometry.coordinates,
-                                duration: route.duration,
-                                distance: route.distance,
-                            };
+                            if (data.routes?.length > 0) {
+                                const route = data.routes[0];
+                                const routeData = {
+                                    coordinates: route.geometry.coordinates,
+                                    duration: route.duration,
+                                    distance: route.distance,
+                                };
 
-                            newCached.set(ride.ride_id, {
-                                rideId: ride.ride_id,
-                                ...routeData,
-                                endStationName: ride.end_station_name,
-                            });
-                            console.log('Added route for ride', ride.ride_id, 'Cache size now:', newCached.size);
-                            setCachedRoutes(new Map(newCached));
-                            if (map) map.triggerRepaint();
+                                newCached.set(routeKey, {
+                                    routeKey,
+                                    ...routeData,
+                                    endStationName: ride.end_station_name,
+                                    rideCount: 1,
+                                });
+                                console.log('Added route for ride', ride.ride_id, 'between', routeKey);
+                                setCachedRoutes(new Map(newCached));
+                                if (map) map.triggerRepaint();
 
+                                setRoutesLoading(prev => prev + 1);
+                            } else {
+                                console.warn('No routes in response for ride', ride.ride_id, data);
+                            }
+                            })
+                            .catch(err => {
+                            if (err.name === 'AbortError') return;
+                            console.error('Error fetching route for ride', ride.ride_id, err);
                             setRoutesLoading(prev => prev + 1);
-                        } else {
-                            console.warn('No routes in response for ride', ride.ride_id, data);
-                        }
-                    })
-                    .catch(err => {
-                        if (err.name === 'AbortError') return;
-                        console.error('Error fetching route:', err);
-                        setRoutesLoading(prev => prev + 1);
-                    })
-                    .finally(() => {
-                        activeRequests--;
-                        processQueue();
-                    });
+                            })
+                        .finally(() => {
+                            activeRequests--;
+                            processQueue();
+                        });
+                }, queueIndex * 500);
             }
         };
 

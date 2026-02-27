@@ -12,14 +12,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const query = `
-      SELECT ride_id, started_at, start_station_id, end_station_id, route_polyline
-      FROM rides
-      WHERE route_polyline IS NULL
-        AND start_station_id IS NOT NULL
-        AND end_station_id IS NOT NULL
-      LIMIT 5000
+    // Get all month tables
+    const tableQuery = `
+      SELECT name FROM sqlite_master 
+      WHERE type='table' AND name LIKE 'rides_%'
+      ORDER BY name DESC
     `;
+    
+    const tableResult = await db.prepare(tableQuery).all() as any;
+    const tables = (tableResult.results || []).map((r: any) => r.name);
+
+    if (tables.length === 0) {
+      return NextResponse.json({ results: [] });
+    }
+
+    // Query all month tables with UNION
+    const selectStatements = tables.map(
+      (table) => `SELECT ride_id, started_at, start_station_id, end_station_id, route_polyline FROM ${table}
+        WHERE route_polyline IS NULL
+          AND start_station_id IS NOT NULL
+          AND end_station_id IS NOT NULL`
+    );
+
+    const query = selectStatements.join(' UNION ALL ') + ' LIMIT 5000';
 
     const result = await db.prepare(query).all();
 

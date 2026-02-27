@@ -31,18 +31,16 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
-    const start = `${yearMonth}-01`;
+    const tableName = `rides_${yearMonth.replace('-', '')}`;
 
-    const query = `
-      SELECT ride_id, rideable_type, started_at, end_station_name, start_station_id, end_station_id, route_polyline
-      FROM rides
-      WHERE start_station_id = ?
-        AND started_at >= ?
-        AND started_at <  date(?, '+1 month')
-      ORDER BY started_at DESC;
-    `;
+     const query = `
+       SELECT ride_id, rideable_type, started_at, end_station_name, start_station_id, end_station_id, route_polyline
+       FROM ${tableName}
+       WHERE start_station_id = ?
+       ORDER BY started_at DESC;
+     `;
 
-    const result = await db.prepare(query).bind(stationId, start, start).all();
+     const result = await db.prepare(query).bind(stationId).all();
 
     // If KV is available and data is empty, trigger background cache
     if (kv && (!result.results || result.results.length === 0)) {

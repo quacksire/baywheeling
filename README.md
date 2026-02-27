@@ -16,11 +16,34 @@ Baywheel.ing visualizes BayWheels trip patterns using [anonymized historical sys
 
 Click any station to view stats. Browse different months to spot seasonal patterns.
 
+## Architecture
+
+### Database & Caching
+
+**Rides Data:**
+- Historical trip data is stored in **D1** partitioned by month (`rides_YYYYMM` tables)
+- Each ride includes start/end stations, times, and (once computed) cached route polylines
+
+**Route Polylines:**
+- **OSRM API** computes cycling routes between stations on-demand
+- Computed routes are cached in **D1** (per-ride) and **KV** (per route pair) to avoid redundant API calls
+- Routes are grouped by origin→destination pair; if multiple rides share the same route, the line thickness increases by `1 + log(rideCount) * 0.1` for subtle visual emphasis
+
+**Station Stats:**
+- Aggregated stats (top destinations, busiest hours, etc.) are streamed as JSON-lines and cached in **KV** to avoid expensive re-aggregation
+
+### Rate Limiting
+
+OSRM enforces a **1 request/second** limit per IP. To respect this:
+- Client initiates requests with a **2 concurrent** limit
+- Requests are **staggered by 500ms** (queueIndex * 500) to maintain spacing
+- Combined with Cloudflare's caching, this prevents bandwidth blocks
+
 ## Limitations
 
 **Route lines** are computed using [OSRM](https://project-osrm.org), the only free open-source routing engine I could find.
 
-It only supports `driving` and `walking` modes. I chose `driving` because walking had more issues.
+It only supports `driving` and `walking` modes. `Cycling` is used here.
 
 If you have another free and simple option, feel free to open an issue.
 
