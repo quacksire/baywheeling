@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
     // Build union of all month tables
     const selectStatements = tables.map(
-      (table) => `SELECT start_station_id as station_id, start_station_name as station_name FROM ${table}
+      (table: string) => `SELECT start_station_id as station_id, start_station_name as station_name FROM ${table}
        UNION
        SELECT end_station_id, end_station_name FROM ${table}`
     );

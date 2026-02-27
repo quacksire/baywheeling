@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     // Query all month tables with UNION
     const selectStatements = tables.map(
-      (table) => `SELECT ride_id, started_at, start_station_id, end_station_id, route_polyline FROM ${table}
+      (table: string) => `SELECT ride_id, started_at, start_station_id, end_station_id, route_polyline FROM ${table}
         WHERE route_polyline IS NULL
           AND start_station_id IS NOT NULL
           AND end_station_id IS NOT NULL`
