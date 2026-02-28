@@ -426,9 +426,9 @@ export function StationLayer() {
         setRoutesLoading(cachedRides.length);
 
 
-        // Concurrency limiter - limit to 2 parallel requests for uncached rides only
+        // Concurrency limiter - limit to 20 parallel requests for uncached rides only
         // OSRM has strict rate limits, so we keep this very low
-        const concurrencyLimit = 10;
+        const concurrencyLimit = 20;
         let activeRequests = 0;
         let queueIndex = 0;
 
