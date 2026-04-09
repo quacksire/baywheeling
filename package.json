@@ -17,7 +17,7 @@
     "@base-ui/react": "^1.0.0",
     "@deck.gl/core": "^9.2.5",
     "@deck.gl/layers": "^9.2.5",
-    "@opennextjs/cloudflare": "^1.14.8",
+    "@opennextjs/cloudflare": "^1.18.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
