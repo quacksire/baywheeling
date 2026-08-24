@@ -104,7 +104,7 @@ def download_and_extract(key: str, destination: Path) -> Path:
     return extract_dir
 
 
-def run_converter(data_dir: Path, work_dir: Path, month: str) -> Path:
+def run_converter(data_dir: Path, work_dir: Path, month: str, limit=None) -> Path:
     # The converter resolves data/ and kv.csv relative to its working directory.
     # Keep the large, persistent pair cache in the repository, but give the
     # temporary conversion workspace a copy so a failed run cannot truncate it.
@@ -113,7 +113,11 @@ def run_converter(data_dir: Path, work_dir: Path, month: str) -> Path:
 
     print("Running the existing csv_to_monthly_sql.py converter...")
     subprocess.run(
-        [sys.executable, str(CONVERTER)],
+        [
+            sys.executable,
+            str(CONVERTER),
+            *(["--limit", str(limit)] if limit is not None else []),
+        ],
         cwd=work_dir,
         check=True,
     )
@@ -163,7 +167,14 @@ def main() -> None:
         type=normalize_month,
         help="Month to import: YYYY-MM or YYYYMM. Omit to import every available month.",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Process at most this many rides (useful for a small test import).",
+    )
     args = parser.parse_args()
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be at least 1")
 
     source_keys = list_source_keys()
     if args.month:
@@ -180,7 +191,7 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix=f"baywheelin-{month}-") as temp:
             work_dir = Path(temp)
             data_dir = download_and_extract(source_key, work_dir)
-            month_sql = run_converter(data_dir, work_dir, month)
+            month_sql = run_converter(data_dir, work_dir, month, args.limit)
             apply_to_d1(work_dir / "seeds_by_month_csv" / "00_create_tables.sql", month_sql)
 
     print(f"Imported {len(months_to_import)} month(s) into remote D1.")

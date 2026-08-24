@@ -10,6 +10,7 @@ Requires env vars for KV upload: CF_ACCOUNT_ID, CF_API_KEY
 """
 
 import csv
+import argparse
 import json
 import os
 import ssl
@@ -129,7 +130,7 @@ def get_polyline(row, cache, new_routes):
     return polyline
 
 
-def csv_to_sql(csv_file, cache, new_routes):
+def csv_to_sql(csv_file, cache, new_routes, limit=None):
     """Convert a single CSV file to SQL INSERT statements with polylines."""
     inserts = defaultdict(list)
     row_count = 0
@@ -140,6 +141,8 @@ def csv_to_sql(csv_file, cache, new_routes):
         reader = csv.DictReader(f)
 
         for row in reader:
+            if limit is not None and row_count >= limit:
+                break
             started_at = row.get("started_at", "")
             if not started_at or len(started_at) < 7:
                 continue
@@ -226,6 +229,12 @@ def bulk_put_kv(new_routes):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=None, help="Process at most this many rides")
+    args = parser.parse_args()
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be at least 1")
+
     data_dir = Path("data")
     output_dir = Path("seeds_by_month_csv")
 
@@ -241,11 +250,17 @@ def main():
     csv_files = sorted(data_dir.glob("*-baywheels-tripdata.csv"))
     print(f"\n=== Processing {len(csv_files)} CSV files ===")
 
+    remaining_limit = args.limit
     for idx, csv_file in enumerate(csv_files, 1):
         print(f"[{idx}/{len(csv_files)}] {csv_file.name}...")
-        inserts = csv_to_sql(csv_file, cache, new_routes)
+        inserts = csv_to_sql(csv_file, cache, new_routes, remaining_limit)
         for month, stmts in inserts.items():
             monthly_inserts[month].extend(stmts)
+        if remaining_limit is not None:
+            processed = sum(len(stmts) for stmts in inserts.values())
+            remaining_limit -= processed
+            if remaining_limit <= 0:
+                break
 
     # Save updated cache
     print(f"\n=== Saving route cache ({len(cache)} total, {len(new_routes)} new) ===")
