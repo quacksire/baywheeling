@@ -93,7 +93,8 @@ def download_and_extract(key: str, destination: Path) -> Path:
                 continue
         else:
             raise RuntimeError(f"Could not decode downloaded CSV: {csv_path.name}")
-        csv_path.write_text(text, encoding="utf-8", newline="")
+        with csv_path.open("w", encoding="utf-8", newline="") as normalized_csv:
+            normalized_csv.write(text)
 
     return extract_dir
 
