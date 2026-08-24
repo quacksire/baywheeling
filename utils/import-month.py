@@ -72,7 +72,12 @@ def download_and_extract(key: str, destination: Path) -> Path:
     extract_dir.mkdir()
     print(f"Extracting {archive.name}")
     with zipfile.ZipFile(archive) as zip_file:
-        csv_members = [name for name in zip_file.namelist() if name.lower().endswith(".csv")]
+        csv_members = [
+            name for name in zip_file.namelist()
+            if name.lower().endswith(".csv")
+            and not Path(name).name.startswith("._")
+            and "__MACOSX" not in Path(name).parts
+        ]
         if not csv_members:
             raise RuntimeError(f"No CSV file found inside {key}")
         for member in csv_members:
