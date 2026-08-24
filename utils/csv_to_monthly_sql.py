@@ -181,7 +181,7 @@ def csv_to_sql(csv_file, cache, new_routes, limit=None):
             values_str = ", ".join(values)
             table_name = f"rides_{year_month}"
             col_list = ", ".join([f'"{col}"' for col in columns])
-            insert_stmt = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({values_str});\n'
+            insert_stmt = f'INSERT OR IGNORE INTO "{table_name}" ({col_list}) VALUES ({values_str});\n'
 
             inserts[year_month].append(insert_stmt)
 
