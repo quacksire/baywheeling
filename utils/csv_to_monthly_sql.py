@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import ssl
+import subprocess
 import time
 import urllib.request
 from pathlib import Path
@@ -75,6 +76,33 @@ def save_kv_cache(cache):
 def fetch_polyline(start_lng, start_lat, end_lng, end_lat):
     """Fetch a cycling route polyline from OSRM with retry/backoff."""
     url = f"{OSRM_BASE}/{start_lng},{start_lat};{end_lng},{end_lat}?overview=full&geometries=polyline"
+
+    # The Apple-provided Python 3.9 on some VPS/macOS setups fails the TLS
+    # handshake against OSRM. curl uses the system TLS implementation and is
+    # more reliable here, while keeping urllib as a fallback for minimal hosts.
+    try:
+        for attempt in range(1, 4):
+            result = subprocess.run(
+                [
+                    "curl", "-fsSL", "--http1.1", "--tlsv1.2",
+                    "--connect-timeout", "10", "--max-time", "30",
+                    "-A", "baywheelin-vps-importer/1.0", url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=35,
+            )
+            if result.returncode == 0:
+                routes = json.loads(result.stdout).get("routes", [])
+                if routes:
+                    return routes[0].get("geometry")
+            if attempt < 3:
+                delay = attempt * 2
+                print(f"    curl OSRM attempt {attempt} failed; retrying in {delay}s")
+                time.sleep(delay)
+    except FileNotFoundError:
+        pass
+
     for attempt in range(1, 4):
         try:
             req = urllib.request.Request(
