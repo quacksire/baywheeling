@@ -12,6 +12,7 @@ Requires env vars for KV upload: CF_ACCOUNT_ID, CF_API_KEY
 import csv
 import json
 import os
+import ssl
 import time
 import urllib.request
 from pathlib import Path
@@ -23,6 +24,7 @@ KV_NAMESPACE_ID = "4ba5cf8ffada4206a7a0a26843b0b524"
 
 OSRM_BASE = "https://router.project-osrm.org/route/v1/cycling"
 KV_CACHE_FILE = Path.cwd() / "kv.csv"
+OSRM_CONTEXT = ssl.create_default_context()
 
 
 def get_table_schema():
@@ -70,17 +72,26 @@ def save_kv_cache(cache):
 
 
 def fetch_polyline(start_lng, start_lat, end_lng, end_lat):
-    """Fetch a cycling route polyline from OSRM."""
+    """Fetch a cycling route polyline from OSRM with retry/backoff."""
     url = f"{OSRM_BASE}/{start_lng},{start_lat};{end_lng},{end_lat}?overview=full&geometries=polyline"
-    try:
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-            routes = data.get("routes", [])
-            if routes:
-                return routes[0].get("geometry")
-    except Exception as e:
-        print(f"    OSRM error: {e}")
+    for attempt in range(1, 4):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "baywheelin-vps-importer/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=30, context=OSRM_CONTEXT) as resp:
+                data = json.loads(resp.read())
+                routes = data.get("routes", [])
+                if routes:
+                    return routes[0].get("geometry")
+        except Exception as error:
+            if attempt == 3:
+                print(f"    OSRM error after 3 attempts: {error}")
+            else:
+                delay = attempt * 2
+                print(f"    OSRM attempt {attempt} failed: {error}; retrying in {delay}s")
+                time.sleep(delay)
     return None
 
 
@@ -112,7 +123,8 @@ def get_polyline(row, cache, new_routes):
         cache[reverse_key] = polyline
         new_routes[kv_key] = polyline
         # Rate limit: OSRM is a free service
-        time.sleep(0.1)
+        # Respect OSRM's public-service pacing between uncached requests.
+        time.sleep(1.1)
 
     return polyline
 
