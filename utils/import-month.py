@@ -136,7 +136,7 @@ def run_converter(data_dir: Path, work_dir: Path, month: str, limit=None) -> Pat
     return month_sql
 
 
-def split_sql_file(sql_file: Path, batch_size: int = 5_000) -> list[Path]:
+def split_sql_file(sql_file: Path, batch_size: int = 10_000) -> list[Path]:
     """Split a large one-insert-per-line file into D1-sized request batches."""
     batches = []
     statements = []
