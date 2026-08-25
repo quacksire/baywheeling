@@ -46,6 +46,8 @@ type MapStyleOption = string | MapLibreGL.StyleSpecification;
 
 type MapProps = {
   children?: ReactNode;
+  /** Explicit map theme, matching mapcn's theme prop. */
+  theme?: "light" | "dark";
   /** Custom map styles for light and dark themes. Overrides the default Carto styles. */
   styles?: {
     light?: MapStyleOption;
@@ -68,7 +70,7 @@ const DefaultLoader = () => (
 );
 
 const Map = forwardRef<MapRef, MapProps>(function Map(
-  { children, styles, className, ...props },
+  { children, theme, styles, className, ...props },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +78,7 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
   const [isLoaded, setIsLoaded] = useState(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const { resolvedTheme } = useTheme();
+  const activeTheme = theme ?? resolvedTheme;
   const currentStyleRef = useRef<MapStyleOption | null>(null);
 
   const mapStyles = useMemo(
@@ -92,7 +95,7 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
     if (!containerRef.current) return;
 
     const initialStyle =
-      resolvedTheme === "dark" ? mapStyles.dark : mapStyles.light;
+      activeTheme === "light" ? mapStyles.light : mapStyles.dark;
     currentStyleRef.current = initialStyle;
 
     const map = new MapLibreGL.Map({
@@ -124,10 +127,10 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
   }, []);
 
   useEffect(() => {
-    if (!mapInstance || !resolvedTheme) return;
+    if (!mapInstance || !activeTheme) return;
 
     const newStyle =
-      resolvedTheme === "dark" ? mapStyles.dark : mapStyles.light;
+      activeTheme === "light" ? mapStyles.light : mapStyles.dark;
 
     if (currentStyleRef.current === newStyle) return;
 
@@ -139,7 +142,7 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
     });
 
     return () => cancelAnimationFrame(frameId);
-  }, [mapInstance, resolvedTheme, mapStyles]);
+  }, [mapInstance, activeTheme, mapStyles]);
 
   const isLoading = !isLoaded || !isStyleLoaded;
 

@@ -23,27 +23,12 @@ export async function GET(request: NextRequest) {
   try {
     const { env } = getCloudflareContext();
     const db = env.baywheels;
-    const kv = env.baywheel_kv;
 
     if (!db) {
       return NextResponse.json(
         { error: 'Database binding not found' },
         { status: 500 }
       );
-    }
-
-    // Check KV cache first
-    const cacheKey = `station:${stationId}-${yearMonth}`;
-    if (kv) {
-      const cached = await kv.get(cacheKey);
-      if (cached) {
-        return new NextResponse(cached, {
-          headers: {
-            'Content-Type': 'application/x-ndjson',
-            'X-Cache': 'HIT'
-          }
-        });
-      }
     }
 
     const tableName = `rides_${yearMonth.replace('-', '')}`;
@@ -54,8 +39,6 @@ export async function GET(request: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const chunks: string[] = [];
-
           // Get overall stats first (fastest query)
           console.log('Fetching stats from table:', tableName);
           const result = await db
@@ -73,7 +56,6 @@ export async function GET(request: NextRequest) {
 
           console.log('Stats result:', result);
           const statsLine = JSON.stringify({ type: 'stats', data: result }) + '\n';
-          chunks.push(statsLine);
           controller.enqueue(new TextEncoder().encode(statsLine));
 
           // Get rideable type breakdown
@@ -89,7 +71,6 @@ export async function GET(request: NextRequest) {
             .all();
 
           const rideableLine = JSON.stringify({ type: 'rideableTypes', data: rideableTypes.results || [] }) + '\n';
-          chunks.push(rideableLine);
           controller.enqueue(new TextEncoder().encode(rideableLine));
 
           // Get day of week breakdown
@@ -105,7 +86,6 @@ export async function GET(request: NextRequest) {
             .all();
 
           const dayLine = JSON.stringify({ type: 'dayOfWeek', data: dayOfWeek.results || [] }) + '\n';
-          chunks.push(dayLine);
           controller.enqueue(new TextEncoder().encode(dayLine));
 
           // Get top destinations
@@ -122,7 +102,6 @@ export async function GET(request: NextRequest) {
             .all();
 
           const destLine = JSON.stringify({ type: 'destinations', data: destinations.results || [] }) + '\n';
-          chunks.push(destLine);
           controller.enqueue(new TextEncoder().encode(destLine));
 
           // Get busiest hours (hour of day breakdown)
@@ -138,17 +117,10 @@ export async function GET(request: NextRequest) {
             .all();
 
           const hoursLine = JSON.stringify({ type: 'busiestHours', data: busiestHours.results || [] }) + '\n';
-          chunks.push(hoursLine);
           controller.enqueue(new TextEncoder().encode(hoursLine));
 
           const completeLine = JSON.stringify({ type: 'complete' }) + '\n';
-          chunks.push(completeLine);
           controller.enqueue(new TextEncoder().encode(completeLine));
-
-          // Cache the entire response to KV
-          if (kv) {
-            await kv.put(cacheKey, chunks.join(''));
-          }
 
           controller.close();
         } catch (error) {

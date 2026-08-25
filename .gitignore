@@ -52,5 +52,8 @@ next-env.d.ts
 /migrations/*
 /utils/rides.seed.sql
 /utils/data
-
-
+__pycache__/
+*.pyc
+/.impeccable/
+/26-01.json
+/utils/seeds_by_month_csv/

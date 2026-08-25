@@ -6,8 +6,8 @@ set -e
 
 
 # step 1: convert CSVs to monthly SQL files
-echo "Converting CSVs to monthly SQL..."
-python3 csv_to_monthly_sql.py
+#echo "Converting CSVs to monthly SQL..."
+#python3 csv_to_monthly_sql.py
 
 # step 2: create month tables in D1
 echo "Creating month tables in D1..."

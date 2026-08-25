@@ -25,8 +25,8 @@ Click any station to view stats. Browse different months to spot seasonal patter
 - Each ride includes start/end stations, times, and (once computed) cached route polylines
 
 **Route Polylines:**
-- **OSRM API** computes cycling routes between stations on-demand
-- Computed routes are cached in **D1** (per-ride) and **KV** (per route pair) to avoid redundant API calls
+- The VPS importer computes cycling routes with the **OSRM API** and persists the pair cache in `utils/kv.csv`
+- Imported polylines are stored in **D1** (per ride); **KV** remains an optional edge cache for route pairs
 - Routes are grouped by origin→destination pair; if multiple rides share the same route, the line thickness increases by `1 + log(rideCount) * 0.1` for subtle visual emphasis
 
 **Station Stats:**
@@ -52,7 +52,7 @@ If you have another free and simple option, feel free to open an issue.
 - [Next.js](https://nextjs.org) with [shadcn/ui](https://ui.shadcn.com) and [Tailwind](https://tailwindcss.com)
 - [MapLibre GL](https://maplibre.org) (via [mapcn](https://developers.maptiler.com/docs/mapcn) and [carto](https://carto.com)) for mapping
 - [Deck.gl](https://deck.gl) for route rendering
-- [Recharts](https://recharts.org) for charts
+- [Dither Kit](https://tripwire.sh/dither-kit) for dithered charts and visual primitives
 - **[Cloudflare Workers](https://workers.cloudflare.com)** — Edge compute for OSRM routing requests and API proxying
 - **[Cloudflare D1](https://developers.cloudflare.com/d1)** — SQLite database for caching computed route polylines, reducing API calls to OSRM
 - **[Cloudflare KV](https://developers.cloudflare.com/kv)** — Key-value store for rapid access to station metadata and frequently-requested aggregated trip statistics
@@ -93,7 +93,10 @@ If you have another free and simple option, feel free to open an issue.
 > The app relies on historical trip data from Lyft's Bay Wheels system. This data is not included in the repository due to size, but you can easily load it yourself using the steps below. 
 > Make you run the `init` script before loading data, as it sets up the D1 database. KV should just work without initialization, but D1 needs the schema to be created first.
 
-To load Bay Wheels trip data into D1:
+Run ingestion from a VPS. The importer is deliberately outside the Worker so a
+failed edge job cannot reset its own state or interfere with existing D1 tables.
+`utils/kv.csv` is the persistent route-pair cache; back it up with the rest of
+the VPS files.
 
 1. **Download system data:**
    Download CSV files from [Lyft's Bay Wheels system data](https://www.lyft.com/bikes/bay-wheels/system-data) and place them in `utils/data/`:
@@ -103,14 +106,15 @@ To load Bay Wheels trip data into D1:
    # etc.
    ```
 
-2. **Convert CSV to SQL:**
+2. **Import a month from the Bay Wheels S3 archive:**
    ```bash
-   python utils/csv_to_d1_sql.py utils/data
+   python3 utils/import-month.py 2026-02
    ```
-   This generates SQL insert statements from the CSV files.
+   Omit the month to import every available archive month. The command uses
+   `utils/kv.csv` while generating SQL and applies `CREATE TABLE IF NOT EXISTS`
+   plus the month inserts to the existing remote D1 database.
 
-3. **Upload to D1:**
+3. **Backfill the local pair cache when needed:**
    ```bash
-   ./utils/load-seeds.sh
+   python3 utils/fetch_routes.py
    ```
-   This loads the generated SQL into your Cloudflare D1 database.
