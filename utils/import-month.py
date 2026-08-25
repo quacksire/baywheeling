@@ -136,6 +136,33 @@ def run_converter(data_dir: Path, work_dir: Path, month: str, limit=None) -> Pat
     return month_sql
 
 
+def split_sql_file(sql_file: Path, batch_size: int = 5_000) -> list[Path]:
+    """Split a large one-insert-per-line file into D1-sized request batches."""
+    batches = []
+    statements = []
+    part_number = 1
+
+    def write_batch(lines: list[str], number: int) -> Path:
+        batch_file = sql_file.with_name(f"{sql_file.stem}.part-{number:04d}.sql")
+        with batch_file.open("w", encoding="utf-8", newline="") as output:
+            output.writelines(lines)
+        return batch_file
+
+    with sql_file.open("r", encoding="utf-8") as source:
+        for line in source:
+            if line.lstrip().startswith("--"):
+                continue
+            statements.append(line)
+            if len(statements) >= batch_size:
+                batches.append(write_batch(statements, part_number))
+                part_number += 1
+                statements = []
+
+    if statements:
+        batches.append(write_batch(statements, part_number))
+    return batches
+
+
 def apply_to_d1(create_tables: Path, month_sql: Path) -> None:
     def execute(sql_file: Path) -> None:
         print(f"Applying {sql_file.name} to remote D1...")
@@ -156,7 +183,11 @@ def apply_to_d1(create_tables: Path, month_sql: Path) -> None:
         )
 
     execute(create_tables)
-    execute(month_sql)
+    batches = split_sql_file(month_sql)
+    print(f"Loading {month_sql.name} in {len(batches)} D1 batches...")
+    for index, batch in enumerate(batches, 1):
+        print(f"Applying batch {index}/{len(batches)}: {batch.name}")
+        execute(batch)
 
 
 def main() -> None:
