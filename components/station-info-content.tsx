@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Grid,
   Legend,
@@ -45,6 +45,8 @@ interface StationInfoContentProps {
   selectedYear: string;
   selectedMonthNum: string;
   stats: StationStats | null;
+  statsLoading: boolean;
+  statsError: boolean;
   loadingRides: boolean;
   routesLoading: number;
   routesTotal: number;
@@ -104,6 +106,8 @@ export function   StationInfoContent({
   selectedYear,
   selectedMonthNum,
   stats,
+  statsLoading,
+  statsError,
   loadingRides,
   routesLoading,
   routesTotal,
@@ -128,9 +132,10 @@ export function   StationInfoContent({
         .map((yearMonth) => yearMonth.split('-')[1])
         .sort((a, b) => parseInt(b) - parseInt(a));
     const hasAnyRideSignal = effectiveRidesCount > 0;
+    const isInitialDataLoading = loadingRides || (statsLoading && !stats);
     const hasStatsBackfill = !loadingRides && ridesCount === 0 && statsRideCount > 0;
     const dayOfWeekChartData = useMemo(
-        () => stats?.dayOfWeek.map((d) => ({
+        () => stats?.dayOfWeek?.map((d) => ({
             ...d,
             day_name: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][
                 parseInt(d.day_num) || 0
@@ -139,7 +144,7 @@ export function   StationInfoContent({
         [stats?.dayOfWeek]
     );
     const busiestHoursChartData = useMemo(
-        () => stats?.busiestHours.map((h) => ({
+        () => stats?.busiestHours?.map((h) => ({
             ...h,
             hour_label: `${h.hour}:00`,
         })) ?? [],
@@ -194,7 +199,9 @@ export function   StationInfoContent({
   return (
     <div>
       <h3 className="font-bold text-base mb-1">{stationName}</h3>
-      <p className="text-xs text-muted-foreground mb-4">{effectiveRidesCount} recorded rides</p>
+      <p className="text-xs text-muted-foreground mb-4" aria-live="polite">
+        {isInitialDataLoading ? "Loading recorded rides…" : `${effectiveRidesCount} recorded rides`}
+      </p>
 
         {isVirtualStation && (
             <Item variant={'outline'} size="sm" className="mb-4">
@@ -225,15 +232,41 @@ export function   StationInfoContent({
           </Item>
       )}
 
-      {!isVirtualStation && selectedMonth && loadingRides && (
+      {!isVirtualStation && selectedMonth && isInitialDataLoading && (
           <Item variant="outline" size="sm" className="mb-4">
               <ItemMedia>
                 <Spinner className="size-5" />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Pulling ride counts for this dock</ItemTitle>
-                <ItemDescription>Loading the month&apos;s trips and station stats.</ItemDescription>
+                <ItemTitle>Loading this dock&apos;s monthly snapshot</ItemTitle>
+                <ItemDescription>Pulling ride totals, patterns, and route details.</ItemDescription>
               </ItemContent>
+          </Item>
+      )}
+
+      {!isVirtualStation && selectedMonth && statsLoading && stats && (
+          <Item variant="outline" size="sm" className="mb-4">
+            <ItemMedia>
+              <Spinner className="size-5" />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>Loading the rest of the stats</ItemTitle>
+              <ItemDescription>Ride totals are ready. Patterns and destinations are still arriving.</ItemDescription>
+            </ItemContent>
+          </Item>
+      )}
+
+      {!isVirtualStation && selectedMonth && !loadingRides && !statsLoading && statsError && !stats && (
+          <Item variant="outline" size="sm" className="mb-4">
+            <ItemMedia>
+              <AlertCircle className="size-5 text-muted-foreground" aria-hidden="true" />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>Station stats are not ready</ItemTitle>
+              <ItemDescription>
+                Ride routes can still appear while this month&apos;s summary is unavailable. Try this month again shortly.
+              </ItemDescription>
+            </ItemContent>
           </Item>
       )}
 
@@ -264,7 +297,7 @@ export function   StationInfoContent({
           </Item>
       )}
 
-      {!isVirtualStation && selectedMonth && !loadingRides && !hasAnyRideSignal && !hasStatsBackfill && (
+      {!isVirtualStation && selectedMonth && !loadingRides && !statsLoading && !statsError && !hasAnyRideSignal && !hasStatsBackfill && (
           <Item variant={'default'} size="sm" className="mb-4">
             <ItemMedia>
               {/* TODO: Add an icon for no data */}
@@ -287,7 +320,9 @@ export function   StationInfoContent({
             <div className="p-2 bg-muted rounded-md">
               <p className="text-xs text-muted-foreground">False Starts</p>
               <p className="font-bold text-lg">
-                {((stats.false_starts / stats.total_rides) * 100).toFixed(1)}%
+                {stats.total_rides > 0
+                  ? `${((stats.false_starts / stats.total_rides) * 100).toFixed(1)}%`
+                  : "0.0%"}
               </p>
               <p className="text-xs text-muted-foreground">{stats.false_starts} rides</p>
             </div>

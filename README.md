@@ -115,8 +115,8 @@ the VPS files.
    still attempted. Imports use idempotent inserts and can be rerun safely.
    The command uses `utils/kv.csv` while generating SQL and applies
    `CREATE TABLE IF NOT EXISTS` plus the month inserts to the existing remote
-   D1 database. Archives from the legacy Ford GoBike schema are normalized to
-   the current Bay Wheels columns automatically.
+   D1 database. All available archives back to 2017 are included; legacy Ford
+   GoBike columns are normalized to the current Bay Wheels schema automatically.
 
 3. **Backfill the local pair cache when needed:**
    ```bash

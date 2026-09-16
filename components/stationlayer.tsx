@@ -103,6 +103,8 @@ export function StationLayer() {
      const [routesLoading, setRoutesLoading] = useState(0);
      const [routesTotal, setRoutesTotal] = useState(0);
      const [stats, setStats] = useState<StationStats | null>(null);
+     const [statsLoading, setStatsLoading] = useState(false);
+     const [statsError, setStatsError] = useState(false);
      const [discoveredMonths, setDiscoveredMonths] = useState<string[]>([]);
      const [selectedYear, setSelectedYear] = useState<string>('');
      const [selectedMonthNum, setSelectedMonthNum] = useState<string>('');
@@ -359,11 +361,16 @@ export function StationLayer() {
     useEffect(() => {
         if (!selectedPoint || !selectedMonth) return;
 
+        const abortController = new AbortController();
+        const { signal } = abortController;
+
         // Clear old routes when selecting new station or month
         setCachedRoutes(new Map());
         setRoutesLoading(0);
         setRoutesTotal(0);
         setStats(null);
+        setStatsLoading(true);
+        setStatsError(false);
 
         setLoadingRides(true);
         setSelectedRideIndex(0);
@@ -375,8 +382,11 @@ export function StationLayer() {
         ridesUrl.searchParams.set('year_month', selectedMonth);
 
         // Fetch rides
-        fetch(ridesUrl.toString())
-            .then(res => res.json())
+        fetch(ridesUrl.toString(), { signal })
+            .then(res => {
+                if (!res.ok) throw new Error(`Ride request failed with ${res.status}`);
+                return res.json();
+            })
             .then((data: any) => {
                 if (data.error) {
                     console.error('API Error:', data.error);
@@ -390,23 +400,28 @@ export function StationLayer() {
                 }
             })
             .catch(err => {
+                if (err instanceof DOMException && err.name === 'AbortError') return;
                 console.error('Error fetching rides:', err);
                 setRides([]);
             })
-            .finally(() => setLoadingRides(false));
+            .finally(() => {
+                if (!signal.aborted) setLoadingRides(false);
+            });
 
         // Fetch station stats (streams as they come in)
         const statsUrl = new URL('/api/station-stats', window.location.origin);
         statsUrl.searchParams.set('station_id', selectedPoint?.short_name);
         statsUrl.searchParams.set('year_month', selectedMonth);
 
-        fetch(statsUrl.toString())
+        fetch(statsUrl.toString(), { signal })
             .then(res => {
+                if (!res.ok) throw new Error(`Stats request failed with ${res.status}`);
                 if (!res.body) throw new Error('No response body');
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
                 const partialStats: Partial<StationStats> = {};
+                let completed = false;
 
                 const processStream = async () => {
                     while (true) {
@@ -434,6 +449,7 @@ export function StationLayer() {
                                         partialStats.busiestHours = message.data;
                                     } else if (message.type === 'complete') {
                                         // All stats loaded
+                                        completed = true;
                                         setStats(partialStats as StationStats);
                                     }
 
@@ -447,13 +463,22 @@ export function StationLayer() {
                             }
                         }
                     }
+
+                    if (!completed) throw new Error('Stats stream ended before completion');
                 };
 
                 return processStream();
             })
             .catch(err => {
+                if (err instanceof DOMException && err.name === 'AbortError') return;
                 console.error('Error fetching station stats:', err);
+                setStatsError(true);
+            })
+            .finally(() => {
+                if (!signal.aborted) setStatsLoading(false);
             });
+
+        return () => abortController.abort();
     }, [selectedPoint, selectedMonth]);
 
 
@@ -694,6 +719,8 @@ export function StationLayer() {
                                 selectedYear={selectedYear}
                                 selectedMonthNum={selectedMonthNum}
                                 stats={stats}
+                                statsLoading={statsLoading}
+                                statsError={statsError}
                                 loadingRides={loadingRides}
                                 routesLoading={routesLoading}
                                 routesTotal={routesTotal}

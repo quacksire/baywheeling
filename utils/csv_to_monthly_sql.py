@@ -308,7 +308,7 @@ def main():
 
     # Process CSVs
     monthly_inserts = defaultdict(list)
-    csv_files = sorted(data_dir.glob("*-baywheels-tripdata.csv"))
+    csv_files = sorted(data_dir.glob("*.csv"))
     print(f"\n=== Processing {len(csv_files)} CSV files ===")
 
     remaining_limit = args.limit

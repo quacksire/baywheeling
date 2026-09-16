@@ -50,7 +50,12 @@ def list_source_keys() -> list[tuple[str, str]]:
     keys = re.findall(r"<Key>([^<]+)</Key>", listing)
     matches = []
     for key in keys:
-        match = re.fullmatch(r"(\d{6})-baywhee+ls-tripdata(?:\.csv)?\.zip", key)
+        match = re.fullmatch(
+            r"(\d{6})-(?:baywhee+ls|fordgobike)-tripdata(?:\.csv)?\.zip",
+            key,
+        )
+        if not match:
+            match = re.fullmatch(r"(\d{4})-fordgobike-tripdata(?:\.csv)?\.zip", key)
         if match:
             matches.append((match.group(1), key))
     return sorted(matches)
@@ -114,7 +119,7 @@ def download_and_extract(key: str, destination: Path) -> Path:
     return extract_dir
 
 
-def run_converter(data_dir: Path, work_dir: Path, month: str, limit=None) -> Path:
+def run_converter(data_dir: Path, work_dir: Path, source_period: str, limit=None) -> list[Path]:
     # The converter resolves data/ and kv.csv relative to its working directory.
     # Keep the large, persistent pair cache in the repository, but give the
     # temporary conversion workspace a copy so a failed run cannot truncate it.
@@ -134,16 +139,18 @@ def run_converter(data_dir: Path, work_dir: Path, month: str, limit=None) -> Pat
 
     sql_dir = work_dir / "seeds_by_month_csv"
     create_tables = sql_dir / "00_create_tables.sql"
-    month_sql = sql_dir / f"rides_{month}.sql"
     if not create_tables.exists():
         raise RuntimeError("Converter did not create 00_create_tables.sql")
-    if not month_sql.exists():
-        raise RuntimeError(f"Converter did not create {month_sql.name}")
+    month_files = sorted(sql_dir.glob(f"rides_{source_period}*.sql"))
+    if len(source_period) == 6:
+        month_files = [path for path in month_files if path.stem == f"rides_{source_period}"]
+    if not month_files:
+        raise RuntimeError(f"Converter did not create ride SQL for {source_period}")
 
     converted_cache = work_dir / "kv.csv"
     if converted_cache.exists():
         converted_cache.replace(KV_CACHE_FILE)
-    return month_sql
+    return month_files
 
 
 def split_sql_file(sql_file: Path, batch_size: int = 10_000) -> list[Path]:
@@ -247,29 +254,38 @@ def main() -> None:
         raise RuntimeError("No Bay Wheels monthly ZIP files were found")
 
     check_d1_connection()
-    print(f"Found {len(months_to_import)} month(s) to import")
+    print(f"Found {len(months_to_import)} source archive(s) to import")
     failed_months = []
     for index, (month, source_key) in enumerate(months_to_import, 1):
-        print(f"\n=== [{index}/{len(months_to_import)}] Importing {month[:4]}-{month[4:]} ===")
+        period_label = f"{month[:4]}-{month[4:]}" if len(month) == 6 else month
+        print(f"\n=== [{index}/{len(months_to_import)}] Importing {period_label} ===")
         try:
             with tempfile.TemporaryDirectory(prefix=f"baywheelin-{month}-") as temp:
                 work_dir = Path(temp)
                 data_dir = download_and_extract(source_key, work_dir)
-                month_sql = run_converter(data_dir, work_dir, month, args.limit)
-                apply_to_d1(work_dir / "seeds_by_month_csv" / "00_create_tables.sql", month_sql)
+                month_files = run_converter(data_dir, work_dir, month, args.limit)
+                for month_sql in month_files:
+                    apply_to_d1(
+                        work_dir / "seeds_by_month_csv" / "00_create_tables.sql",
+                        month_sql,
+                    )
         except Exception as error:
             if args.month:
                 raise
             failed_months.append((month, str(error)))
-            print(f"FAILED {month[:4]}-{month[4:]}: {error}", file=sys.stderr)
-            print("Continuing with the next month...", file=sys.stderr)
+            print(f"FAILED {period_label}: {error}", file=sys.stderr)
+            print("Continuing with the next source archive...", file=sys.stderr)
 
     imported_count = len(months_to_import) - len(failed_months)
-    print(f"Imported {imported_count}/{len(months_to_import)} month(s) into remote D1.")
+    print(
+        f"Imported {imported_count}/{len(months_to_import)} source archive(s) "
+        "into remote D1."
+    )
     if failed_months:
-        print("Failed months:", file=sys.stderr)
+        print("Failed source archives:", file=sys.stderr)
         for month, error in failed_months:
-            print(f"  {month[:4]}-{month[4:]}: {error}", file=sys.stderr)
+            period_label = f"{month[:4]}-{month[4:]}" if len(month) == 6 else month
+            print(f"  {period_label}: {error}", file=sys.stderr)
         raise SystemExit(1)
 
 
