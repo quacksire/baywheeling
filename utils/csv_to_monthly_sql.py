@@ -11,6 +11,7 @@ Requires env vars for KV upload: CF_ACCOUNT_ID, CF_API_KEY
 
 import csv
 import argparse
+import hashlib
 import json
 import os
 import ssl
@@ -27,6 +28,37 @@ KV_NAMESPACE_ID = "4ba5cf8ffada4206a7a0a26843b0b524"
 OSRM_BASE = "https://router.project-osrm.org/route/v1/cycling"
 KV_CACHE_FILE = Path.cwd() / "kv.csv"
 OSRM_CONTEXT = ssl.create_default_context()
+
+
+def normalize_row(row):
+    """Map the pre-2021 Ford GoBike columns to the current Bay Wheels schema."""
+    if row.get("started_at"):
+        return row
+
+    started_at = row.get("start_time", "")
+    ended_at = row.get("end_time", "")
+    bike_id = row.get("bike_id", "")
+    identity = "\0".join((bike_id, started_at, ended_at))
+    user_type = row.get("user_type", "").lower()
+
+    return {
+        "ride_id": hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+        "rideable_type": "classic_bike",
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "start_station_name": row.get("start_station_name", ""),
+        "start_station_id": row.get("start_station_id", ""),
+        "end_station_name": row.get("end_station_name", ""),
+        "end_station_id": row.get("end_station_id", ""),
+        "start_lat": row.get("start_station_latitude", ""),
+        "start_lng": row.get("start_station_longitude", ""),
+        "end_lat": row.get("end_station_latitude", ""),
+        "end_lng": row.get("end_station_longitude", ""),
+        "member_casual": {
+            "subscriber": "member",
+            "customer": "casual",
+        }.get(user_type, user_type),
+    }
 
 
 def get_table_schema():
@@ -171,6 +203,7 @@ def csv_to_sql(csv_file, cache, new_routes, limit=None):
         for row in reader:
             if limit is not None and row_count >= limit:
                 break
+            row = normalize_row(row)
             started_at = row.get("started_at", "")
             if not started_at or len(started_at) < 7:
                 continue

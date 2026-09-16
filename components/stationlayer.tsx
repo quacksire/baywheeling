@@ -9,7 +9,7 @@ import { useMap, MapPopup, MapMarker, MarkerContent, MarkerLabel } from "@/compo
 import { DeckGLRoutes } from "@/components/deck-gl-routes";
 import { StationInfoContent } from "@/components/station-info-content";
 import { Drawer, DrawerTrigger, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
-import { AboutInfo, type ImportProgress } from "@/components/about-info";
+import { AboutInfo } from "@/components/about-info";
 
 interface Ride {
     ride_id: string;
@@ -63,86 +63,6 @@ interface SelectedPoint {
     [key: string]: any;
 }
 
-interface ImporterJob {
-    month: string;
-    status: string;
-    started_at?: string | null;
-    import_complete?: number | null;
-    total_rows: number;
-    imported_rows: number;
-    routed_rows: number;
-    routes_processed?: number;
-    routes_total?: number;
-    routes_mapped?: number;
-    routes_per_second?: number | null;
-    eta_seconds?: number | null;
-}
-
-interface ImportMonthStatus {
-    month: string;
-    status: string;
-}
-
-interface ImportRateSample {
-    label: string;
-    routesProcessed: number;
-    seenAt: number;
-}
-
-const IMPORT_RATE_WINDOW_MS = 60_000;
-
-const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
-
-function formatYearMonth(yearMonth: string) {
-    const normalized = yearMonth.includes('-')
-        ? yearMonth
-        : `${yearMonth.slice(0, 4)}-${yearMonth.slice(4, 6)}`;
-    const [year, month] = normalized.split('-');
-    return `${monthNames[parseInt(month) - 1]} ${year}`;
-}
-
-function formatSpeed(routesPerSecond: number | null | undefined) {
-    if (!routesPerSecond || !Number.isFinite(routesPerSecond) || routesPerSecond <= 0) {
-        return null;
-    }
-
-    return `${routesPerSecond.toFixed(routesPerSecond >= 10 ? 0 : 1)} routes/sec`;
-}
-
-function formatRemainingSeconds(seconds: number | null | undefined) {
-    if (seconds == null || !Number.isFinite(seconds) || seconds < 0) {
-        return null;
-    }
-
-    const rounded = Math.max(0, Math.round(seconds));
-    const hours = Math.floor(rounded / 3600);
-    const minutes = Math.floor((rounded % 3600) / 60);
-    const secs = rounded % 60;
-
-    if (hours > 0) {
-        return `${hours}h ${minutes.toString().padStart(2, '0')}m left`;
-    }
-
-    if (minutes > 0) {
-        return `${minutes}m ${secs.toString().padStart(2, '0')}s left`;
-    }
-
-    return `${secs}s left`;
-}
-
 function monthIndex(yearMonth: string) {
     const [year, month] = yearMonth.split('-').map((value) => parseInt(value, 10));
     return year * 12 + month;
@@ -184,21 +104,12 @@ export function StationLayer() {
      const [routesTotal, setRoutesTotal] = useState(0);
      const [stats, setStats] = useState<StationStats | null>(null);
      const [discoveredMonths, setDiscoveredMonths] = useState<string[]>([]);
-     const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
-     const [importStatusesByMonth, setImportStatusesByMonth] = useState<Record<string, ImportMonthStatus>>({});
-     const [loadingImportProgress, setLoadingImportProgress] = useState(false);
-     const lastImportSample = useRef<ImportRateSample | null>(null);
-     const importRateSamples = useRef<ImportRateSample[]>([]);
      const [selectedYear, setSelectedYear] = useState<string>('');
      const [selectedMonthNum, setSelectedMonthNum] = useState<string>('');
      const [drawerOpen, setDrawerOpen] = useState(true);
      const latestMonthInitializedStation = useRef<string | null>(null);
      const selectedMonth = selectedYear && selectedMonthNum ? `${selectedYear}-${selectedMonthNum}` : '';
-     const selectedMonthImportStatus = importStatusesByMonth[selectedMonth]?.status ?? null;
-     const availableMonths = discoveredMonths.filter((month) => {
-         const status = importStatusesByMonth[month]?.status;
-         return !status || status === 'complete';
-     });
+     const availableMonths = discoveredMonths;
 
      useEffect(() => {
          console.log(selectedPoint);
@@ -376,144 +287,19 @@ export function StationLayer() {
             });
     }, []);
 
-    const refreshImportProgress = useCallback(() => {
-        setLoadingImportProgress(true);
-        const requestUrl = `/api/importer?ts=${Date.now()}`;
-        fetch(requestUrl, { cache: 'no-store' })
-            .then((res) => res.json())
-            .then((data: any) => {
-                const jobs = Array.isArray(data.jobs) ? data.jobs as ImporterJob[] : [];
-                setImportStatusesByMonth(
-                    Object.fromEntries(
-                        jobs.map((job) => [
-                            `${job.month.slice(0, 4)}-${job.month.slice(4, 6)}`,
-                            { month: job.month, status: job.status },
-                        ])
-                    )
-                );
-                const activeJob = jobs.find((job) => job.status === 'running') || null;
-
-                if (!activeJob) {
-                    lastImportSample.current = null;
-                    importRateSamples.current = [];
-                    setImportProgress(null);
-                    return;
-                }
-
-                const label = formatYearMonth(activeJob.month);
-                const importedRows = activeJob.imported_rows || 0;
-                const importComplete = Boolean(activeJob.import_complete);
-                const routesMapped = activeJob.routes_mapped ?? activeJob.routed_rows ?? 0;
-                const routesProcessed = activeJob.routes_processed ?? activeJob.routed_rows ?? routesMapped;
-                const rawTotalRows = activeJob.total_rows || 0;
-                const totalRows = Math.max(rawTotalRows, importedRows);
-                const routesTotal = totalRows;
-                const now = Date.now();
-                const previousSample = lastImportSample.current;
-                const sameLabel = previousSample?.label === label;
-                const previousStartedAt = activeJob.started_at ?? null;
-                const startedAtMs = activeJob.started_at ? Date.parse(activeJob.started_at) : Number.NaN;
-                const elapsedAverageRate = Number.isFinite(startedAtMs) && startedAtMs > 0
-                    ? routesProcessed / Math.max(1, (now - startedAtMs) / 1000)
-                    : null;
-                const backendRate = activeJob.routes_per_second ?? elapsedAverageRate ?? null;
-
-                setImportProgress((previous) => {
-                    const sameMonth = previous?.label === label;
-                    const restartedRun = Boolean(
-                        sameMonth
-                        && (
-                            (previous?.startedAt ?? null) !== previousStartedAt
-                            || importedRows < previous.importedRows
-                            || routesProcessed < (previous.routesProcessed ?? previous.routesMapped)
-                        )
-                    );
-                    const preservePrevious = sameMonth && !restartedRun;
-                    const previousRoutesProcessed = previous?.routesProcessed ?? previous?.routesMapped ?? 0;
-                    if (!preservePrevious) {
-                        importRateSamples.current = [];
-                    }
-                    const sampleHistory = preservePrevious
-                        ? importRateSamples.current
-                        : [];
-                    const safeRoutesProcessed = preservePrevious
-                        ? Math.max(previousRoutesProcessed, routesProcessed)
-                        : routesProcessed;
-                    const nextSample: ImportRateSample = {
-                        label,
-                        routesProcessed: safeRoutesProcessed,
-                        seenAt: now,
-                    };
-                    const trimmedSamples = [...sampleHistory, nextSample].filter(
-                        (sample) => sample.label === label && now - sample.seenAt <= IMPORT_RATE_WINDOW_MS,
-                    );
-                    const windowStartSample = trimmedSamples[0] ?? nextSample;
-                    const windowRoutesDelta = Math.max(0, nextSample.routesProcessed - windowStartSample.routesProcessed);
-                    const windowSeconds = Math.max(1, (nextSample.seenAt - windowStartSample.seenAt) / 1000);
-                    const rollingRate = windowRoutesDelta > 0 ? windowRoutesDelta / windowSeconds : null;
-                    const lockedRoutesTotal = preservePrevious && previous.routesTotal > 0
-                        ? Math.max(previous.routesTotal, routesTotal)
-                        : routesTotal;
-                    const routesPerSecond = rollingRate ?? backendRate;
-                    const remainingRoutes = Math.max(0, lockedRoutesTotal - routesProcessed);
-                    const computedEta = routesPerSecond && remainingRoutes > 0
-                        ? remainingRoutes / routesPerSecond
-                        : activeJob.eta_seconds ?? null;
-                    const etaSeconds = computedEta;
-                    const phase: ImportProgress['phase'] = activeJob.status === 'failed'
-                        ? 'failed'
-                        : activeJob.status === 'queued'
-                            ? 'queued'
-                            : importComplete
-                                ? 'mapping'
-                                : 'importing';
-                    const safeRoutesMapped = importComplete
-                        ? routesMapped
-                        : Math.min(routesMapped, importedRows);
-
-                    const nextProgress = {
-                        label,
-                        status: activeJob.status,
-                        phase,
-                        importComplete,
-                        importedRows: preservePrevious ? Math.max(previous.importedRows, importedRows) : importedRows,
-                        totalRows: preservePrevious ? Math.max(previous.totalRows, totalRows) : totalRows,
-                        routesMapped: preservePrevious ? Math.max(previous.routesMapped, safeRoutesMapped) : safeRoutesMapped,
-                        routesTotal: lockedRoutesTotal,
-                        startedAt: activeJob.started_at ?? (preservePrevious ? previous?.startedAt : null) ?? null,
-                        routesPerSecond,
-                        etaSeconds,
-                        routesProcessed: safeRoutesProcessed,
-                    };
-                    importRateSamples.current = trimmedSamples;
-                    lastImportSample.current = nextSample;
-                    return nextProgress;
-                });
-            })
-            .catch((error) => {
-                console.error('Error fetching importer status:', error);
-            })
-            .finally(() => {
-                setLoadingImportProgress(false);
-            });
-    }, []);
-
     useEffect(() => {
         refreshAvailableMonths();
-        refreshImportProgress();
-    }, [refreshAvailableMonths, refreshImportProgress]);
+    }, [refreshAvailableMonths]);
 
     useEffect(() => {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
                 refreshAvailableMonths();
-                refreshImportProgress();
             }
         };
 
         const handleFocus = () => {
             refreshAvailableMonths();
-            refreshImportProgress();
         };
 
         window.addEventListener('focus', handleFocus);
@@ -523,19 +309,7 @@ export function StationLayer() {
             window.removeEventListener('focus', handleFocus);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [refreshAvailableMonths, refreshImportProgress]);
-
-    useEffect(() => {
-        const interval = window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                refreshImportProgress();
-            }
-        }, 1_000);
-
-        return () => {
-            window.clearInterval(interval);
-        };
-    }, [refreshImportProgress]);
+    }, [refreshAvailableMonths]);
 
     useEffect(() => {
         if (availableMonths.length && (!selectedMonth || !availableMonths.includes(selectedMonth))) {
@@ -594,12 +368,6 @@ export function StationLayer() {
         setLoadingRides(true);
         setSelectedRideIndex(0);
         setRouteData(null);
-
-        if (selectedMonthImportStatus === 'queued' || selectedMonthImportStatus === 'running' || selectedMonthImportStatus === 'failed') {
-            setRides([]);
-            setLoadingRides(false);
-            return;
-        }
 
         // Build query string with required month filter
         const ridesUrl = new URL('/api/rides', window.location.origin);
@@ -686,7 +454,7 @@ export function StationLayer() {
             .catch(err => {
                 console.error('Error fetching station stats:', err);
             });
-    }, [selectedPoint, selectedMonth, selectedMonthImportStatus]);
+    }, [selectedPoint, selectedMonth]);
 
 
 
@@ -929,7 +697,6 @@ export function StationLayer() {
                                 loadingRides={loadingRides}
                                 routesLoading={routesLoading}
                                 routesTotal={routesTotal}
-                                selectedMonthImportStatus={selectedMonthImportStatus}
                                 isCurrentMonth={isCurrentMonth()}
                                 availableMonths={availableMonths}
                                 onPreviousMonth={handlePreviousMonth}
@@ -938,11 +705,7 @@ export function StationLayer() {
                                 onRefreshMonths={refreshAvailableMonths}
                             />
                         ) : (
-                            <AboutInfo
-                                isDesktop={isDesktop}
-                                importProgress={importProgress}
-                                loadingImportProgress={loadingImportProgress}
-                            />
+                            <AboutInfo isDesktop={isDesktop} />
                         )}
 
                         <div className="mt-8 pt-6">

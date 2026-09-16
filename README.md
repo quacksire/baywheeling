@@ -110,9 +110,13 @@ the VPS files.
    ```bash
    python3 utils/import-month.py 2026-02
    ```
-   Omit the month to import every available archive month. The command uses
-   `utils/kv.csv` while generating SQL and applies `CREATE TABLE IF NOT EXISTS`
-   plus the month inserts to the existing remote D1 database.
+   Omit the month to import every available archive month. Months are handled
+   independently, so a failed month is reported and the remaining archive is
+   still attempted. Imports use idempotent inserts and can be rerun safely.
+   The command uses `utils/kv.csv` while generating SQL and applies
+   `CREATE TABLE IF NOT EXISTS` plus the month inserts to the existing remote
+   D1 database. Archives from the legacy Ford GoBike schema are normalized to
+   the current Bay Wheels columns automatically.
 
 3. **Backfill the local pair cache when needed:**
    ```bash

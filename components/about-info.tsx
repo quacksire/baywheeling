@@ -3,87 +3,24 @@
 import { Button } from "@/components/ui/button";
 import { Link } from "lucide-react";
 import {useMap} from "@/components/ui/map";
-import { Progress } from "@/components/ui/progress";
-
-export interface ImportProgress {
-    label: string;
-    status: string;
-    phase?: 'queued' | 'importing' | 'mapping' | 'failed' | 'complete';
-    startedAt?: string | null;
-    importComplete?: boolean;
-    importedRows: number;
-    totalRows: number;
-    routesMapped: number;
-    routesTotal: number;
-    routesPerSecond?: number | null;
-    etaSeconds?: number | null;
-    routesProcessed?: number;
-}
 
 interface StationInfoDrawerProps {
     isDesktop: boolean;
-    importProgress: ImportProgress | null;
-    loadingImportProgress: boolean;
 }
 
 const CENTER_SF = [-122.4194, 37.7749];
 const CENTER_OAK = [-122.2711, 37.8044];
 const CENTER_SJ = [-121.8863, 37.3382];
 
-export function AboutInfo({ isDesktop, importProgress, loadingImportProgress }: StationInfoDrawerProps) {
+export function AboutInfo({ isDesktop }: StationInfoDrawerProps) {
 
     const { map } = useMap();
-    const progressValue = importProgress
-        ? getProgressValue(importProgress)
-        : 0;
-    const etaLabel = importProgress?.status === 'running'
-        ? formatRemaining(importProgress.etaSeconds)
-        : null;
-    const speedLabel = importProgress?.status === 'running'
-        ? formatSpeed(importProgress.routesPerSecond)
-        : null;
-    const activityLabel = importProgress ? describeImportActivity(importProgress) : null;
     return (
         <div className="space-y-8 text-gray-300 text-sm leading-relaxed h-min">
             <div>
                 <h2 className="text-2xl font-semibold text-white mb-1">Baywheeling</h2>
                 <p className="text-gray-400 text-sm">A closer look at how BayWheels moves through the Bay.</p>
             </div>
-
-            {(loadingImportProgress || importProgress) && (
-                <section className="border border-border p-3 space-y-2">
-                    <div className="flex items-start justify-between gap-3">
-                        <h3 className="text-sm font-semibold text-white">Data import</h3>
-                        <div className="text-right">
-                            {importProgress?.status === 'running' ? (
-                                <>
-                                    <div className="text-xs text-white tabular-nums">{etaLabel ?? 'estimating...'}</div>
-                                    {speedLabel && <div className="text-[10px] text-gray-400">{speedLabel}</div>}
-                                </>
-                            ) : loadingImportProgress && !importProgress ? (
-                                <span className="text-xs text-gray-400">Checking status...</span>
-                            ) : null}
-                        </div>
-                    </div>
-                    {importProgress && (
-                        <>
-                            <p className="text-xs text-gray-300">
-                                {activityLabel}
-                            </p>
-                            <Progress value={progressValue} data-state={'loading'}  className="w-full" />
-                            <div className="space-y-0.5 text-xs text-gray-500">
-                                <p>
-                                    {importProgress.importedRows.toLocaleString()} rows imported
-                                    {importProgress.totalRows > 0 ? ` of ${importProgress.totalRows.toLocaleString()}` : ''}
-                                </p>
-                                <p>
-                                    {importProgress.routesMapped.toLocaleString()} routes mapped
-                                </p>
-                            </div>
-                        </>
-                    )}
-                </section>
-            )}
 
             {!isDesktop && (
                 <div className="bg-gray-900 rounded-lg p-4 space-y-3">
@@ -177,67 +114,4 @@ export function AboutInfo({ isDesktop, importProgress, loadingImportProgress }: 
             </section>
         </div>
     );
-}
-
-function describeImportActivity(importProgress: ImportProgress) {
-    switch (importProgress.phase) {
-        case 'mapping':
-            return `Mapping ${importProgress.label}`;
-        case 'importing':
-            return `Importing ${importProgress.label}`;
-        case 'queued':
-            return `Queued: ${importProgress.label}`;
-        case 'failed':
-            return `Paused: ${importProgress.label}`;
-        case 'complete':
-            return `${importProgress.label} is ready.`;
-        default:
-            return importProgress.status === 'running'
-                ? `${importProgress.label} is loading now.`
-                : `${importProgress.label} is queued next.`;
-    }
-}
-
-function formatSpeed(routesPerSecond: number | null | undefined) {
-    if (!routesPerSecond || !Number.isFinite(routesPerSecond) || routesPerSecond <= 0) {
-        return null;
-    }
-
-    return `${routesPerSecond.toFixed(routesPerSecond >= 10 ? 0 : 1)} routes/sec`;
-}
-
-function formatRemaining(seconds: number | null | undefined) {
-    if (seconds == null || !Number.isFinite(seconds)) {
-        return null;
-    }
-
-    const rounded = Math.max(0, Math.round(seconds));
-    const hours = Math.floor(rounded / 3600);
-    const minutes = Math.floor((rounded % 3600) / 60);
-    const secs = rounded % 60;
-
-    if (hours > 0) {
-        return `${hours}h ${minutes.toString().padStart(2, '0')}m left`;
-    }
-
-    if (minutes > 0) {
-        return `${minutes}m ${secs.toString().padStart(2, '0')}s left`;
-    }
-
-    return `${secs}s left`;
-}
-
-function getProgressValue(importProgress: ImportProgress) {
-    if (importProgress.totalRows > 0) {
-        const completedRows = importProgress.importComplete
-            ? importProgress.routesMapped
-            : importProgress.importedRows;
-        return Math.min(100, (completedRows / importProgress.totalRows) * 100);
-    }
-
-    if (!importProgress.importComplete) {
-        return importProgress.importedRows ? 15 : 0;
-    }
-
-    return importProgress.routesMapped ? 15 : 0;
 }

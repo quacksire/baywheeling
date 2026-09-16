@@ -48,7 +48,6 @@ interface StationInfoContentProps {
   loadingRides: boolean;
   routesLoading: number;
   routesTotal: number;
-  selectedMonthImportStatus?: string | null;
   isCurrentMonth: boolean;
   availableMonths: string[];
   onPreviousMonth: () => void;
@@ -108,7 +107,6 @@ export function   StationInfoContent({
   loadingRides,
   routesLoading,
   routesTotal,
-  selectedMonthImportStatus,
   isCurrentMonth,
   availableMonths,
   onPreviousMonth,
@@ -129,8 +127,6 @@ export function   StationInfoContent({
         .filter((yearMonth) => yearMonth.startsWith(`${selectedYear}-`))
         .map((yearMonth) => yearMonth.split('-')[1])
         .sort((a, b) => parseInt(b) - parseInt(a));
-    const isMonthStillProcessing = selectedMonthImportStatus === 'queued' || selectedMonthImportStatus === 'running';
-    const didMonthFail = selectedMonthImportStatus === 'failed';
     const hasAnyRideSignal = effectiveRidesCount > 0;
     const hasStatsBackfill = !loadingRides && ridesCount === 0 && statsRideCount > 0;
     const dayOfWeekChartData = useMemo(
@@ -254,34 +250,6 @@ export function   StationInfoContent({
           </Item>
       )}
 
-      {!isVirtualStation && selectedMonth && !loadingRides && !hasAnyRideSignal && isMonthStillProcessing && (
-          <Item variant={'outline'} size="sm" className="mb-4">
-            <ItemMedia>
-              <Spinner className="size-5" />
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Still being processed</ItemTitle>
-              <ItemDescription>
-                  {monthNames[parseInt(selectedMonthNum) - 1]} {selectedYear} is still being imported and routed, so ride details for this dock are not ready yet.
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-      )}
-
-      {!isVirtualStation && selectedMonth && !loadingRides && !hasAnyRideSignal && didMonthFail && (
-          <Item variant={'outline'} size="sm" className="mb-4">
-            <ItemMedia>
-              {/* TODO: Add an error icon */}
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Import paused for this month</ItemTitle>
-              <ItemDescription>
-                  {monthNames[parseInt(selectedMonthNum) - 1]} {selectedYear} has not finished processing yet, so ride details for this dock are temporarily unavailable.
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-      )}
-
       {!isVirtualStation && selectedMonth && hasStatsBackfill && (
           <Item variant={'outline'} size="sm" className="mb-4">
             <ItemMedia>
@@ -296,7 +264,7 @@ export function   StationInfoContent({
           </Item>
       )}
 
-      {!isVirtualStation && selectedMonth && !loadingRides && !hasAnyRideSignal && !hasStatsBackfill && !isMonthStillProcessing && !didMonthFail && (
+      {!isVirtualStation && selectedMonth && !loadingRides && !hasAnyRideSignal && !hasStatsBackfill && (
           <Item variant={'default'} size="sm" className="mb-4">
             <ItemMedia>
               {/* TODO: Add an icon for no data */}

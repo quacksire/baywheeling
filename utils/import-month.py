@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -66,7 +67,16 @@ def download_and_extract(key: str, destination: Path) -> Path:
     archive = destination / key
     url = f"{S3_BUCKET_URL}/{key}"
     print(f"Downloading {url}")
-    urllib.request.urlretrieve(url, archive)
+    for attempt in range(1, 4):
+        try:
+            urllib.request.urlretrieve(url, archive)
+            break
+        except Exception:
+            if attempt == 3:
+                raise
+            delay = attempt * 2
+            print(f"Download attempt {attempt} failed; retrying in {delay}s...")
+            time.sleep(delay)
 
     extract_dir = destination / "data"
     extract_dir.mkdir()
@@ -190,6 +200,26 @@ def apply_to_d1(create_tables: Path, month_sql: Path) -> None:
         execute(batch)
 
 
+def check_d1_connection() -> None:
+    """Fail before expensive downloads when the remote database is unavailable."""
+    print("Checking remote D1 access...")
+    subprocess.run(
+        [
+            "npx",
+            "wrangler",
+            "d1",
+            "execute",
+            "baywheels",
+            "--remote",
+            "--command",
+            "SELECT 1",
+            "--yes",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -216,16 +246,31 @@ def main() -> None:
     if not months_to_import:
         raise RuntimeError("No Bay Wheels monthly ZIP files were found")
 
+    check_d1_connection()
     print(f"Found {len(months_to_import)} month(s) to import")
+    failed_months = []
     for index, (month, source_key) in enumerate(months_to_import, 1):
         print(f"\n=== [{index}/{len(months_to_import)}] Importing {month[:4]}-{month[4:]} ===")
-        with tempfile.TemporaryDirectory(prefix=f"baywheelin-{month}-") as temp:
-            work_dir = Path(temp)
-            data_dir = download_and_extract(source_key, work_dir)
-            month_sql = run_converter(data_dir, work_dir, month, args.limit)
-            apply_to_d1(work_dir / "seeds_by_month_csv" / "00_create_tables.sql", month_sql)
+        try:
+            with tempfile.TemporaryDirectory(prefix=f"baywheelin-{month}-") as temp:
+                work_dir = Path(temp)
+                data_dir = download_and_extract(source_key, work_dir)
+                month_sql = run_converter(data_dir, work_dir, month, args.limit)
+                apply_to_d1(work_dir / "seeds_by_month_csv" / "00_create_tables.sql", month_sql)
+        except Exception as error:
+            if args.month:
+                raise
+            failed_months.append((month, str(error)))
+            print(f"FAILED {month[:4]}-{month[4:]}: {error}", file=sys.stderr)
+            print("Continuing with the next month...", file=sys.stderr)
 
-    print(f"Imported {len(months_to_import)} month(s) into remote D1.")
+    imported_count = len(months_to_import) - len(failed_months)
+    print(f"Imported {imported_count}/{len(months_to_import)} month(s) into remote D1.")
+    if failed_months:
+        print("Failed months:", file=sys.stderr)
+        for month, error in failed_months:
+            print(f"  {month[:4]}-{month[4:]}: {error}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
