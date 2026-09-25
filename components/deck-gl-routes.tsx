@@ -9,7 +9,7 @@ interface RouteData {
   coordinates: [number, number][];
   duration: number;
   distance: number;
-  endStationName: string;
+  endStationName: string | null;
   rideCount: number;
 }
 
