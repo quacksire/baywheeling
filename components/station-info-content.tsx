@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Grid,
@@ -99,6 +100,33 @@ const virtualStations = [
     "mission at whipple",
 ]
 
+function ChartSkeleton({ labelWidth = "w-24" }: { labelWidth?: string }) {
+  return (
+    <div className="mx-[-1rem]" aria-hidden="true">
+      <div className="mb-2 px-4">
+        <Skeleton className={`h-3 ${labelWidth}`} />
+      </div>
+      <Skeleton className="h-[120px] w-full" />
+    </div>
+  );
+}
+
+function DestinationsSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <Skeleton className="mb-2 h-3 w-32" />
+      <div className="space-y-2">
+        {["w-5/6", "w-3/4", "w-4/5", "w-2/3", "w-3/4"].map((width, index) => (
+          <div key={index} className="flex h-5 items-center justify-between gap-3">
+            <Skeleton className={`h-3 ${width}`} />
+            <Skeleton className="h-5 w-8" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function   StationInfoContent({
   stationName,
   ridesCount,
@@ -133,6 +161,7 @@ export function   StationInfoContent({
         .sort((a, b) => parseInt(b) - parseInt(a));
     const hasAnyRideSignal = effectiveRidesCount > 0;
     const isInitialDataLoading = loadingRides || (statsLoading && !stats);
+    const showStatsLayout = !isVirtualStation && Boolean(selectedMonth) && (statsLoading || Boolean(stats));
     const hasStatsBackfill = !loadingRides && ridesCount === 0 && statsRideCount > 0;
     const dayOfWeekChartData = useMemo(
         () => stats?.dayOfWeek?.map((d) => ({
@@ -232,30 +261,6 @@ export function   StationInfoContent({
           </Item>
       )}
 
-      {!isVirtualStation && selectedMonth && isInitialDataLoading && (
-          <Item variant="outline" size="sm" className="mb-4">
-              <ItemMedia>
-                <Spinner className="size-5" />
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>Loading this dock&apos;s monthly snapshot</ItemTitle>
-                <ItemDescription>Pulling ride totals, patterns, and route details.</ItemDescription>
-              </ItemContent>
-          </Item>
-      )}
-
-      {!isVirtualStation && selectedMonth && statsLoading && stats && (
-          <Item variant="outline" size="sm" className="mb-4">
-            <ItemMedia>
-              <Spinner className="size-5" />
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Loading the rest of the stats</ItemTitle>
-              <ItemDescription>Ride totals are ready. Patterns and destinations are still arriving.</ItemDescription>
-            </ItemContent>
-          </Item>
-      )}
-
       {!isVirtualStation && selectedMonth && !loadingRides && !statsLoading && statsError && !stats && (
           <Item variant="outline" size="sm" className="mb-4">
             <ItemMedia>
@@ -310,29 +315,46 @@ export function   StationInfoContent({
       )}
 
       {/* Stats section */}
-      {!isVirtualStation && selectedMonth && !loadingRides && stats && (
-        <div className="space-y-3">
+      {showStatsLayout && (
+        <div className="space-y-3" aria-busy={statsLoading}>
           <div className="grid grid-cols-2 gap-3">
             <div className="p-2 bg-muted rounded-md">
               <p className="text-xs text-muted-foreground">Total Rides</p>
-              <p className="font-bold text-lg">{stats.total_rides}</p>
+              {stats ? (
+                <p className="font-bold text-lg">{stats.total_rides}</p>
+              ) : (
+                <Skeleton className="mt-1 h-5 w-12 bg-background/40" />
+              )}
             </div>
             <div className="p-2 bg-muted rounded-md">
               <p className="text-xs text-muted-foreground">False Starts</p>
-              <p className="font-bold text-lg">
-                {stats.total_rides > 0
-                  ? `${((stats.false_starts / stats.total_rides) * 100).toFixed(1)}%`
-                  : "0.0%"}
-              </p>
-              <p className="text-xs text-muted-foreground">{stats.false_starts} rides</p>
+              {stats ? (
+                <>
+                  <p className="font-bold text-lg">
+                    {stats.total_rides > 0
+                      ? `${((stats.false_starts / stats.total_rides) * 100).toFixed(1)}%`
+                      : "0.0%"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{stats.false_starts} rides</p>
+                </>
+              ) : (
+                <div className="mt-1 space-y-1">
+                  <Skeleton className="h-5 w-14 bg-background/40" />
+                  <Skeleton className="h-3 w-12 bg-background/40" />
+                </div>
+              )}
             </div>
           </div>
 
           {/* Rideable Type Chart */}
-          {stats.rideableTypes && stats.rideableTypes.length > 0 && (
+          {statsLoading && !stats?.rideableTypes ? (
               <>
                 <Separator />
-
+                <ChartSkeleton labelWidth="w-28" />
+              </>
+          ) : stats?.rideableTypes && stats.rideableTypes.length > 0 ? (
+              <>
+                <Separator />
                 <div className="mx-[-1rem]">
                   <p className="text-xs text-muted-foreground mb-2 px-4">Bike Type Usage</p>
                   <PieChart
@@ -348,13 +370,17 @@ export function   StationInfoContent({
                   </PieChart>
                 </div>
               </>
-
-          )}
+          ) : null}
 
           {/* Day of Week Chart */}
-          {stats.dayOfWeek && stats.dayOfWeek.length > 0 && (
+          {statsLoading && !stats?.dayOfWeek ? (
               <>
-
+                <Separator />
+                <ChartSkeleton />
+              </>
+          ) : stats?.dayOfWeek && stats.dayOfWeek.length > 0 ? (
+              <>
+                <Separator />
                 <div className="mx-[-1rem]">
                   <p className="text-xs text-muted-foreground mb-2 px-4">
                     Weekday pattern
@@ -372,13 +398,17 @@ export function   StationInfoContent({
                   </LineChart>
                 </div>
               </>
-
-          )}
+          ) : null}
 
           {/* Busiest Hours */}
-          {stats.busiestHours && stats.busiestHours.length > 0 && (
+          {statsLoading && !stats?.busiestHours ? (
               <>
-              <Separator />
+                <Separator />
+                <ChartSkeleton />
+              </>
+          ) : stats?.busiestHours && stats.busiestHours.length > 0 ? (
+              <>
+                <Separator />
                 <div className="mx-[-1rem]">
                   <p className="text-xs text-muted-foreground mb-2 px-4">
                     Busiest hours
@@ -397,28 +427,32 @@ export function   StationInfoContent({
                   </LineChart>
                 </div>
               </>
-
-
-          )}
-
-          <Separator />
+          ) : null}
 
           {/* Top Destinations */}
-          {stats.destinations && stats.destinations.length > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-2">Where riders went next</p>
-              <div className="space-y-2">
-                {stats.destinations.map((dest, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="truncate flex-1">{dest.end_station_name}</span>
-                    <Badge variant="outline" className="text-xs ml-2">
-                      {dest.count}
-                    </Badge>
+          {statsLoading && !stats?.destinations ? (
+              <>
+                <Separator />
+                <DestinationsSkeleton />
+              </>
+          ) : stats?.destinations && stats.destinations.length > 0 ? (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Where riders went next</p>
+                  <div className="space-y-2">
+                    {stats.destinations.map((dest, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs">
+                        <span className="truncate flex-1">{dest.end_station_name}</span>
+                        <Badge variant="outline" className="text-xs ml-2">
+                          {dest.count}
+                        </Badge>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
+              </>
+          ) : null}
         </div>
       )}
 

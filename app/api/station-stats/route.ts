@@ -1,10 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
+type StatsMessage = { type: string; data?: unknown };
+type StationStatsSnapshot = {
+  total_rides: number;
+  member_count: number;
+  casual_count: number;
+  false_starts: number;
+  rideableTypes: Array<{ rideable_type: string | null; count: number }>;
+  dayOfWeek: Array<{ day_num: string | null; count: number }>;
+  destinations: Array<{ end_station_name: string | null; count: number }>;
+  busiestHours: Array<{ hour: string | null; count: number }>;
+};
+
+function statsResponse(messages: StatsMessage[]) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const message of messages) {
+        controller.enqueue(encoder.encode(`${JSON.stringify(message)}\n`));
+      }
+      controller.close();
+    },
+  });
+
+  return new NextResponse(stream, {
+    headers: {
+      'Content-Type': 'application/x-ndjson',
+      'Transfer-Encoding': 'chunked',
+    },
+  });
+}
+
+function stationStatsMessages(stats: StationStatsSnapshot): StatsMessage[] {
+  return [
+    { type: 'stats', data: stats },
+    { type: 'rideableTypes', data: stats.rideableTypes },
+    { type: 'dayOfWeek', data: stats.dayOfWeek },
+    { type: 'destinations', data: stats.destinations },
+    { type: 'busiestHours', data: stats.busiestHours },
+    { type: 'complete' },
+  ];
+}
+
+const emptyStats = (): StationStatsSnapshot => ({
+  total_rides: 0,
+  member_count: 0,
+  casual_count: 0,
+  false_starts: 0,
+  rideableTypes: [],
+  dayOfWeek: [],
+  destinations: [],
+  busiestHours: [],
+});
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const stationId = searchParams.get('station_id');
-  const yearMonth = searchParams.get('year_month'); // YYYY-MM format (required)
+  const yearMonth = searchParams.get('year_month');
 
   if (!stationId) {
     return NextResponse.json(
@@ -13,7 +66,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (!yearMonth) {
+  if (!yearMonth || !/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) {
     return NextResponse.json(
       { error: 'year_month is required in YYYY-MM format' },
       { status: 400 }
@@ -23,6 +76,7 @@ export async function GET(request: NextRequest) {
   try {
     const { env } = getCloudflareContext();
     const db = env.baywheels;
+    const kv = env.baywheel_kv;
 
     if (!db) {
       return NextResponse.json(
@@ -31,16 +85,33 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const statsCacheKey = `station-stats:v1:${yearMonth}:${stationId}`;
+    const readyCacheKey = `station-stats:v1:${yearMonth}:_ready`;
+    if (kv) {
+      try {
+        const [cachedStats, cachedMonthReady] = await Promise.all([
+          kv.get(statsCacheKey, 'json') as Promise<StationStatsSnapshot | null>,
+          kv.get(readyCacheKey),
+        ]);
+        if (cachedStats) return statsResponse(stationStatsMessages(cachedStats));
+        if (cachedMonthReady) return statsResponse(stationStatsMessages(emptyStats()));
+      } catch (error) {
+        console.warn('Station stats cache unavailable; querying ride data:', error);
+      }
+    }
+
     const tableName = `rides_${yearMonth.replace('-', '')}`;
     const whereClause = `WHERE start_station_id = ?`;
     const params = [stationId];
 
-    // Stream results as they become available
     const stream = new ReadableStream({
       async start(controller) {
+        const encoder = new TextEncoder();
+        const enqueue = (message: StatsMessage) => {
+          controller.enqueue(encoder.encode(`${JSON.stringify(message)}\n`));
+        };
+
         try {
-          // Get overall stats first (fastest query)
-          console.log('Fetching stats from table:', tableName);
           const result = await db
             .prepare(
               `SELECT
@@ -54,11 +125,8 @@ export async function GET(request: NextRequest) {
             .bind(...params)
             .first();
 
-          console.log('Stats result:', result);
-          const statsLine = JSON.stringify({ type: 'stats', data: result }) + '\n';
-          controller.enqueue(new TextEncoder().encode(statsLine));
+          enqueue({ type: 'stats', data: result });
 
-          // Get rideable type breakdown
           const rideableTypes = await db
             .prepare(
               `SELECT rideable_type, COUNT(*) as count
@@ -70,10 +138,8 @@ export async function GET(request: NextRequest) {
             .bind(...params)
             .all();
 
-          const rideableLine = JSON.stringify({ type: 'rideableTypes', data: rideableTypes.results || [] }) + '\n';
-          controller.enqueue(new TextEncoder().encode(rideableLine));
+          enqueue({ type: 'rideableTypes', data: rideableTypes.results || [] });
 
-          // Get day of week breakdown
           const dayOfWeek = await db
             .prepare(
               `SELECT strftime('%w', substr(started_at, 1, 10)) as day_num, COUNT(*) as count
@@ -85,10 +151,8 @@ export async function GET(request: NextRequest) {
             .bind(...params)
             .all();
 
-          const dayLine = JSON.stringify({ type: 'dayOfWeek', data: dayOfWeek.results || [] }) + '\n';
-          controller.enqueue(new TextEncoder().encode(dayLine));
+          enqueue({ type: 'dayOfWeek', data: dayOfWeek.results || [] });
 
-          // Get top destinations
           const destinations = await db
             .prepare(
               `SELECT end_station_name, COUNT(*) as count
@@ -101,10 +165,8 @@ export async function GET(request: NextRequest) {
             .bind(...params)
             .all();
 
-          const destLine = JSON.stringify({ type: 'destinations', data: destinations.results || [] }) + '\n';
-          controller.enqueue(new TextEncoder().encode(destLine));
+          enqueue({ type: 'destinations', data: destinations.results || [] });
 
-          // Get busiest hours (hour of day breakdown)
           const busiestHours = await db
             .prepare(
               `SELECT substr(started_at, 12, 2) as hour, COUNT(*) as count
@@ -116,24 +178,20 @@ export async function GET(request: NextRequest) {
             .bind(...params)
             .all();
 
-          const hoursLine = JSON.stringify({ type: 'busiestHours', data: busiestHours.results || [] }) + '\n';
-          controller.enqueue(new TextEncoder().encode(hoursLine));
-
-          const completeLine = JSON.stringify({ type: 'complete' }) + '\n';
-          controller.enqueue(new TextEncoder().encode(completeLine));
-
+          enqueue({ type: 'busiestHours', data: busiestHours.results || [] });
+          enqueue({ type: 'complete' });
           controller.close();
         } catch (error) {
           controller.error(error);
         }
-      }
+      },
     });
 
     return new NextResponse(stream, {
       headers: {
         'Content-Type': 'application/x-ndjson',
-        'Transfer-Encoding': 'chunked'
-      }
+        'Transfer-Encoding': 'chunked',
+      },
     });
   } catch (error) {
     console.error('Error fetching station stats:', error);

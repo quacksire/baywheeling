@@ -30,7 +30,7 @@ Click any station to view stats. Browse different months to spot seasonal patter
 - Routes are grouped by origin→destination pair; if multiple rides share the same route, the line thickness increases by `1 + log(rideCount) * 0.1` for subtle visual emphasis
 
 **Station Stats:**
-- Aggregated stats (top destinations, busiest hours, etc.) are streamed as JSON-lines and cached in **KV** to avoid expensive re-aggregation
+- Station/month totals and breakdowns are precomputed in **KV** after import, so selecting a station reads one cached summary instead of rescanning the month’s rides
 
 ### Rate Limiting
 
@@ -115,10 +115,18 @@ the VPS files.
    still attempted. Imports use idempotent inserts and can be rerun safely.
    The command uses `utils/kv.csv` while generating SQL and applies
    `CREATE TABLE IF NOT EXISTS` plus the month inserts to the existing remote
-   D1 database. All available archives back to 2017 are included; legacy Ford
-   GoBike columns are normalized to the current Bay Wheels schema automatically.
+   D1 database, then refreshes the station/month stats in KV. All available
+   archives back to 2017 are included; legacy Ford GoBike columns are normalized
+   to the current Bay Wheels schema automatically.
 
-3. **Backfill the local pair cache when needed:**
+3. **Backfill cached stats for months already in D1:**
+   ```bash
+   pnpm cache:month-stats
+   ```
+   Pass a month such as `2026-02` to refresh only that month. The no-argument
+   command discovers and refreshes every `rides_YYYYMM` table in remote D1.
+
+4. **Backfill the local pair cache when needed:**
    ```bash
    python3 utils/fetch_routes.py
    ```

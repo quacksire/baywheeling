@@ -25,6 +25,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONVERTER = Path(__file__).with_name("csv_to_monthly_sql.py").resolve()
+STATS_CACHE_SCRIPT = Path(__file__).with_name("cache-month-stats.py").resolve()
 KV_CACHE_FILE = Path(__file__).with_name("kv.csv").resolve()
 S3_BUCKET_URL = "https://s3.amazonaws.com/baywheels-data"
 
@@ -268,6 +269,12 @@ def main() -> None:
                     apply_to_d1(
                         work_dir / "seeds_by_month_csv" / "00_create_tables.sql",
                         month_sql,
+                    )
+                    imported_month = month_sql.stem.removeprefix("rides_")
+                    subprocess.run(
+                        [sys.executable, str(STATS_CACHE_SCRIPT), imported_month],
+                        cwd=REPO_ROOT,
+                        check=True,
                     )
         except Exception as error:
             if args.month:
