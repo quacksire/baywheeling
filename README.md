@@ -21,16 +21,15 @@ Click any station to view stats. Browse different months to spot seasonal patter
 ### Database & Caching
 
 **Rides Data:**
-- Historical trip data is stored in **D1** partitioned by month (`rides_YYYYMM` tables)
-- Each ride includes start/end stations, times, and (once computed) cached route polylines
+- New archives are reduced to station/month summaries and origin→destination counts in **KV**; the app does not need individual ride rows to draw the map or show its stats
+- Existing monthly `rides_YYYYMM` tables in **D1** remain available as a source for rebuilding summaries during the migration
 
 **Route Polylines:**
-- The VPS importer computes cycling routes with the **OSRM API** and persists the pair cache in `utils/kv.csv`
-- Imported polylines are stored in **D1** (per ride); **KV** remains an optional edge cache for route pairs
-- Routes are grouped by origin→destination pair; if multiple rides share the same route, the line thickness increases by `1 + log(rideCount) * 0.1` for subtle visual emphasis
+- Cycling paths are fetched from the **OSRM API** as needed and cached once per station pair in **KV**
+- Monthly ride counts are grouped by origin→destination pair, and busy lines are drawn thicker
 
 **Station Stats:**
-- Station/month totals and breakdowns are precomputed in **KV** after import, so selecting a station reads one cached summary instead of rescanning the month’s rides
+- Station/month totals, average and longest ride duration, breakdowns, and route counts are precomputed in **KV**, so selecting a station reads a compact summary instead of loading every ride
 
 ### Rate Limiting
 
@@ -93,10 +92,8 @@ If you have another free and simple option, feel free to open an issue.
 > The app relies on historical trip data from Lyft's Bay Wheels system. This data is not included in the repository due to size, but you can easily load it yourself using the steps below. 
 > Make you run the `init` script before loading data, as it sets up the D1 database. KV should just work without initialization, but D1 needs the schema to be created first.
 
-Run ingestion from a VPS. The importer is deliberately outside the Worker so a
-failed edge job cannot reset its own state or interfere with existing D1 tables.
-`utils/kv.csv` is the persistent route-pair cache; back it up with the rest of
-the VPS files.
+The importer runs outside the Worker and writes compact monthly summaries to
+the existing KV namespace. It does not insert individual rides into D1.
 
 1. **Download system data:**
    Download CSV files from [Lyft's Bay Wheels system data](https://www.lyft.com/bikes/bay-wheels/system-data) and place them in `utils/data/`:
@@ -109,22 +106,20 @@ the VPS files.
 2. **Import a month from the Bay Wheels S3 archive:**
    ```bash
    python3 utils/import-month.py 2026-02
+   python3 utils/import-month.py 2017
    ```
-   Omit the month to import every available archive month. Months are handled
-   independently, so a failed month is reported and the remaining archive is
-   still attempted. Imports use idempotent inserts and can be rerun safely.
-   The command uses `utils/kv.csv` while generating SQL and applies
-   `CREATE TABLE IF NOT EXISTS` plus the month inserts to the existing remote
-   D1 database, then refreshes the station/month stats in KV. All available
-   archives back to 2017 are included; legacy Ford GoBike columns are normalized
-   to the current Bay Wheels schema automatically.
+   Use a year for a yearly archive such as 2017. Omit the period to process all
+   available archives. Each CSV is reduced to monthly station stats and route
+   counts, then uploaded to KV; raw ride rows are discarded. Legacy Ford GoBike
+   columns are normalized automatically.
 
-3. **Backfill cached stats for months already in D1:**
+3. **Backfill compact summaries for months already in D1:**
    ```bash
    pnpm cache:month-stats
    ```
    Pass a month such as `2026-02` to refresh only that month. The no-argument
-   command discovers and refreshes every `rides_YYYYMM` table in remote D1.
+   command discovers each existing `rides_YYYYMM` table in remote D1 and writes
+   station stats and route counts to KV.
 
 4. **Backfill the local pair cache when needed:**
    ```bash

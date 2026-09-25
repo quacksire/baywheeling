@@ -127,7 +127,11 @@ SELECT start_station_id AS station_id,
        COUNT(*) AS total_rides,
        SUM(CASE WHEN member_casual = 'member' THEN 1 ELSE 0 END) AS member_count,
        SUM(CASE WHEN member_casual = 'casual' THEN 1 ELSE 0 END) AS casual_count,
-       SUM(CASE WHEN end_station_id = start_station_id THEN 1 ELSE 0 END) AS false_starts
+       SUM(CASE WHEN end_station_id = start_station_id THEN 1 ELSE 0 END) AS false_starts,
+       AVG(CASE WHEN julianday(ended_at) > julianday(started_at)
+           THEN (julianday(ended_at) - julianday(started_at)) * 86400 END) AS avg_ride_seconds,
+       MAX(CASE WHEN julianday(ended_at) > julianday(started_at)
+           THEN (julianday(ended_at) - julianday(started_at)) * 86400 END) AS longest_ride_seconds
 FROM {table_name}
 WHERE {station_filter}
 GROUP BY start_station_id;
@@ -170,6 +174,20 @@ FROM {table_name}
 WHERE {station_filter}
 GROUP BY start_station_id, hour
 ORDER BY start_station_id, CAST(hour AS INTEGER);
+
+SELECT start_station_id AS station_id,
+       end_station_id,
+       MAX(end_station_name) AS end_station_name,
+       MAX(start_lat) AS start_lat,
+       MAX(start_lng) AS start_lng,
+       MAX(end_lat) AS end_lat,
+       MAX(end_lng) AS end_lng,
+       MAX(route_polyline) AS route_polyline,
+       COUNT(*) AS ride_count
+FROM {table_name}
+WHERE {station_filter} AND end_station_id IS NOT NULL AND end_station_id <> ''
+GROUP BY start_station_id, end_station_id
+ORDER BY start_station_id, ride_count DESC;
 """
 
 
@@ -179,8 +197,8 @@ def month_stats(month: str) -> dict[str, dict]:
         month_stats_query(month), "--json", "--yes", capture_output=True,
     )
     rows_by_query = result_sets(json.loads(result.stdout))
-    if len(rows_by_query) != 5:
-        raise RuntimeError(f"Expected five result sets for {month}, got {len(rows_by_query)}")
+    if len(rows_by_query) != 6:
+        raise RuntimeError(f"Expected six result sets for {month}, got {len(rows_by_query)}")
 
     stats = {
         str(row["station_id"]): {
@@ -188,10 +206,13 @@ def month_stats(month: str) -> dict[str, dict]:
             "member_count": int(row["member_count"] or 0),
             "casual_count": int(row["casual_count"] or 0),
             "false_starts": int(row["false_starts"] or 0),
+            "avg_ride_seconds": round(float(row["avg_ride_seconds"])) if row.get("avg_ride_seconds") is not None else None,
+            "longest_ride_seconds": round(float(row["longest_ride_seconds"])) if row.get("longest_ride_seconds") is not None else None,
             "rideableTypes": [],
             "dayOfWeek": [],
             "destinations": [],
             "busiestHours": [],
+            "routeCounts": [],
         }
         for row in rows_by_query[0]
     }
@@ -202,10 +223,13 @@ def month_stats(month: str) -> dict[str, dict]:
             "member_count": 0,
             "casual_count": 0,
             "false_starts": 0,
+            "avg_ride_seconds": None,
+            "longest_ride_seconds": None,
             "rideableTypes": [],
             "dayOfWeek": [],
             "destinations": [],
             "busiestHours": [],
+            "routeCounts": [],
         })
 
     for row in rows_by_query[1]:
@@ -228,21 +252,45 @@ def month_stats(month: str) -> dict[str, dict]:
             "hour": row.get("hour"),
             "count": int(row["count"]),
         })
+    for row in rows_by_query[5]:
+        station_for(row)["routeCounts"].append({
+            "end_station_id": str(row["end_station_id"]),
+            "end_station_name": row.get("end_station_name"),
+            "start_lat": row.get("start_lat"),
+            "start_lng": row.get("start_lng"),
+            "end_lat": row.get("end_lat"),
+            "end_lng": row.get("end_lng"),
+            "route_polyline": row.get("route_polyline"),
+            "ride_count": int(row["ride_count"]),
+        })
 
     return stats
 
 
 def kv_entries(month: str, stats: dict[str, dict]) -> list[dict[str, str]]:
-    entries = [
-        {
+    entries = []
+    for station_id, snapshot in stats.items():
+        route_entries = []
+        for route in snapshot.get("routeCounts", []):
+            route_polyline = route.get("route_polyline")
+            route_entries.append({key: value for key, value in route.items() if key != "route_polyline"})
+            if route_polyline:
+                entries.append({
+                    "key": f"route:{station_id}:{route['end_station_id']}",
+                    "value": route_polyline,
+                })
+        snapshot["routeCounts"] = route_entries
+        entries.append({
             "key": f"station-stats:v1:{month[:4]}-{month[4:]}:{station_id}",
             "value": json.dumps(snapshot, separators=(",", ":")),
-        }
-        for station_id, snapshot in stats.items()
-    ]
+        })
     entries.append({
         "key": f"station-stats:v1:{month[:4]}-{month[4:]}:_ready",
         "value": "{\"ready\":true}",
+    })
+    entries.append({
+        "key": f"month-index:v1:{month[:4]}-{month[4:]}",
+        "value": "1",
     })
     return entries
 

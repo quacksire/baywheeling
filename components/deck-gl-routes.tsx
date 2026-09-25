@@ -43,12 +43,9 @@ export function DeckGLRoutes({
       rideCount: route.rideCount,
     }));
 
-    // Calculate width based on number of rides using the route
+    // Scale route thickness by ridership while keeping busy lines bounded.
     const getRouteWidth = (d: any) => {
-      // Base width of 1, increases slightly with rideCount
-      // Logarithmic scaling with small multiplier for monthly data
-      // 2 rides = 1.07x, 5 rides = 1.16x, 10 rides = 1.23x
-      return 1 + Math.log(d.rideCount) * 0.1;
+      return 1 + Math.min(2, Math.log10(Math.max(1, d.rideCount)) * 0.5);
     };
 
     // Create or update deck.gl instance

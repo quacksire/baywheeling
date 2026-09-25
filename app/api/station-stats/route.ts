@@ -7,10 +7,13 @@ type StationStatsSnapshot = {
   member_count: number;
   casual_count: number;
   false_starts: number;
+  avg_ride_seconds: number | null;
+  longest_ride_seconds: number | null;
   rideableTypes: Array<{ rideable_type: string | null; count: number }>;
   dayOfWeek: Array<{ day_num: string | null; count: number }>;
   destinations: Array<{ end_station_name: string | null; count: number }>;
   busiestHours: Array<{ hour: string | null; count: number }>;
+  routeCounts: Array<{ end_station_id: string; end_station_name: string | null; ride_count: number }>;
 };
 
 function statsResponse(messages: StatsMessage[]) {
@@ -33,8 +36,9 @@ function statsResponse(messages: StatsMessage[]) {
 }
 
 function stationStatsMessages(stats: StationStatsSnapshot): StatsMessage[] {
+  const { routeCounts: _routeCounts, ...visibleStats } = stats;
   return [
-    { type: 'stats', data: stats },
+    { type: 'stats', data: visibleStats },
     { type: 'rideableTypes', data: stats.rideableTypes },
     { type: 'dayOfWeek', data: stats.dayOfWeek },
     { type: 'destinations', data: stats.destinations },
@@ -48,10 +52,13 @@ const emptyStats = (): StationStatsSnapshot => ({
   member_count: 0,
   casual_count: 0,
   false_starts: 0,
+  avg_ride_seconds: null,
+  longest_ride_seconds: null,
   rideableTypes: [],
   dayOfWeek: [],
   destinations: [],
   busiestHours: [],
+  routeCounts: [],
 });
 
 export async function GET(request: NextRequest) {
@@ -74,30 +81,74 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { env } = getCloudflareContext();
+    const { env, ctx } = getCloudflareContext();
     const db = env.baywheels;
     const kv = env.baywheel_kv;
 
-    if (!db) {
+    if (!db && !kv) {
       return NextResponse.json(
-        { error: 'Database binding not found' },
+        { error: 'Stats data source not found' },
         { status: 500 }
       );
     }
 
     const statsCacheKey = `station-stats:v1:${yearMonth}:${stationId}`;
     const readyCacheKey = `station-stats:v1:${yearMonth}:_ready`;
+    const durationCacheKey = `station-duration:v1:${yearMonth}:${stationId}`;
     if (kv) {
       try {
         const [cachedStats, cachedMonthReady] = await Promise.all([
           kv.get(statsCacheKey, 'json') as Promise<StationStatsSnapshot | null>,
           kv.get(readyCacheKey),
         ]);
-        if (cachedStats) return statsResponse(stationStatsMessages(cachedStats));
+        if (cachedStats) {
+          let stats = cachedStats;
+          if (stats.avg_ride_seconds === undefined || stats.longest_ride_seconds === undefined) {
+            let durations = await kv.get(durationCacheKey, 'json') as {
+              avg_ride_seconds: number | null;
+              longest_ride_seconds: number | null;
+            } | null;
+
+            if (!durations && db) {
+              const tableName = `rides_${yearMonth.replace('-', '')}`;
+              const result = await db.prepare(`
+                SELECT AVG(CASE WHEN julianday(ended_at) > julianday(started_at)
+                    THEN (julianday(ended_at) - julianday(started_at)) * 86400 END) as avg_ride_seconds,
+                       MAX(CASE WHEN julianday(ended_at) > julianday(started_at)
+                    THEN (julianday(ended_at) - julianday(started_at)) * 86400 END) as longest_ride_seconds
+                FROM ${tableName}
+                WHERE start_station_id = ?
+              `).bind(stationId).first<{
+                avg_ride_seconds: number | null;
+                longest_ride_seconds: number | null;
+              }>();
+              durations = {
+                avg_ride_seconds: result?.avg_ride_seconds == null ? null : Math.round(result.avg_ride_seconds),
+                longest_ride_seconds: result?.longest_ride_seconds == null ? null : Math.round(result.longest_ride_seconds),
+              };
+              ctx.waitUntil(
+                kv.put(durationCacheKey, JSON.stringify(durations)).catch((error) => {
+                  console.warn('Could not cache station ride durations:', error);
+                })
+              );
+            }
+
+            stats = {
+              ...stats,
+              avg_ride_seconds: durations?.avg_ride_seconds ?? null,
+              longest_ride_seconds: durations?.longest_ride_seconds ?? null,
+            };
+          }
+          return statsResponse(stationStatsMessages(stats));
+        }
         if (cachedMonthReady) return statsResponse(stationStatsMessages(emptyStats()));
       } catch (error) {
         console.warn('Station stats cache unavailable; querying ride data:', error);
       }
+    }
+
+    if (!db) {
+      return NextResponse.json({ error: 'Stats are not available for this month' }, { status: 404 });
     }
 
     const tableName = `rides_${yearMonth.replace('-', '')}`;
@@ -118,7 +169,11 @@ export async function GET(request: NextRequest) {
                 COUNT(*) as total_rides,
                 SUM(CASE WHEN member_casual = 'member' THEN 1 ELSE 0 END) as member_count,
                 SUM(CASE WHEN member_casual = 'casual' THEN 1 ELSE 0 END) as casual_count,
-                SUM(CASE WHEN end_station_id = start_station_id THEN 1 ELSE 0 END) as false_starts
+                SUM(CASE WHEN end_station_id = start_station_id THEN 1 ELSE 0 END) as false_starts,
+                AVG(CASE WHEN julianday(ended_at) > julianday(started_at)
+                    THEN (julianday(ended_at) - julianday(started_at)) * 86400 END) as avg_ride_seconds,
+                MAX(CASE WHEN julianday(ended_at) > julianday(started_at)
+                    THEN (julianday(ended_at) - julianday(started_at)) * 86400 END) as longest_ride_seconds
                FROM ${tableName}
                ${whereClause}`
             )

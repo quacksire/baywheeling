@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""
-Download one Bay Wheels month, run the existing CSV converter, and load it into D1.
-
-This is intentionally a small, synchronous importer for a VPS. It keeps the
-route-pair cache in utils/kv.csv while the conversion itself runs in /tmp.
+"""Import Bay Wheels archives as compact station/month data in Cloudflare KV.
 
 Usage:
-    python3 utils/import-month.py 2025-06
+    python3 utils/import-month.py 2018-02 2018-03
+    python3 utils/import-month.py 2017
     python3 utils/import-month.py
-    npm run import:month -- 2025-06
+
+Ride rows are streamed from the archive CSV and discarded after station stats
+and origin/destination counts have been written to KV.
 """
 
 import argparse
+import importlib.util
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -22,25 +21,23 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from month_stats import month_stats_from_csv
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONVERTER = Path(__file__).with_name("csv_to_monthly_sql.py").resolve()
 STATS_CACHE_SCRIPT = Path(__file__).with_name("cache-month-stats.py").resolve()
-KV_CACHE_FILE = Path(__file__).with_name("kv.csv").resolve()
 S3_BUCKET_URL = "https://s3.amazonaws.com/baywheels-data"
 
 
-def normalize_month(value: str) -> str:
-    month = value.replace("-", "")
-    if not re.fullmatch(r"\d{6}", month):
-        raise argparse.ArgumentTypeError("month must be YYYY-MM or YYYYMM")
-    year = int(month[:4])
-    month_number = int(month[4:])
-    if not 1 <= month_number <= 12:
-        raise argparse.ArgumentTypeError("month must contain a valid month")
-    if year < 2010 or year > 2100:
-        raise argparse.ArgumentTypeError("month must contain a valid year")
-    return month
+def normalize_period(value: str) -> str:
+    period = value.replace("-", "")
+    if re.fullmatch(r"\d{4}", period) and 2010 <= int(period) <= 2100:
+        return period
+    if not re.fullmatch(r"\d{6}", period) or not 1 <= int(period[4:]) <= 12:
+        raise argparse.ArgumentTypeError("period must be YYYY-MM, YYYYMM, or an archive year")
+    if int(period[:4]) < 2010 or int(period[:4]) > 2100:
+        raise argparse.ArgumentTypeError("period must contain a valid year")
+    return period
 
 
 def list_source_keys() -> list[tuple[str, str]]:
@@ -62,14 +59,14 @@ def list_source_keys() -> list[tuple[str, str]]:
     return sorted(matches)
 
 
-def find_source_key(month: str, source_keys: list[tuple[str, str]]) -> str:
-    for source_month, key in source_keys:
-        if source_month == month:
+def find_source_key(period: str, source_keys: list[tuple[str, str]]) -> str:
+    for source_period, key in source_keys:
+        if source_period == period:
             return key
-    raise RuntimeError(f"No Bay Wheels ZIP found for {month[:4]}-{month[4:]}")
+    raise RuntimeError(f"No Bay Wheels ZIP found for {period}")
 
 
-def download_and_extract(key: str, destination: Path) -> Path:
+def download_and_extract(key: str, destination: Path) -> list[Path]:
     archive = destination / key
     url = f"{S3_BUCKET_URL}/{key}"
     print(f"Downloading {url}")
@@ -96,204 +93,92 @@ def download_and_extract(key: str, destination: Path) -> Path:
         ]
         if not csv_members:
             raise RuntimeError(f"No CSV file found inside {key}")
+        csv_files = []
         for member in csv_members:
-            source_name = Path(member).name
-            with zip_file.open(member) as source, (extract_dir / source_name).open("wb") as target:
+            csv_path = extract_dir / Path(member).name
+            with zip_file.open(member) as source, csv_path.open("wb") as target:
                 shutil.copyfileobj(source, target)
-
-    # The Bay Wheels archive can contain Windows-1252 CSV bytes. The existing
-    # converter intentionally reads UTF-8, so normalize only the temporary copy
-    # created by this standalone importer and leave the converter untouched.
-    for csv_path in extract_dir.glob("*.csv"):
-        raw = csv_path.read_bytes()
-        for encoding in ("utf-8-sig", "cp1252", "latin-1"):
-            try:
-                text = raw.decode(encoding)
-                break
-            except UnicodeDecodeError:
-                continue
-        else:
-            raise RuntimeError(f"Could not decode downloaded CSV: {csv_path.name}")
-        with csv_path.open("w", encoding="utf-8", newline="") as normalized_csv:
-            normalized_csv.write(text)
-
-    return extract_dir
+            raw = csv_path.read_bytes()
+            for encoding in ("utf-8-sig", "cp1252", "latin-1"):
+                try:
+                    text = raw.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                raise RuntimeError(f"Could not decode downloaded CSV: {csv_path.name}")
+            with csv_path.open("w", encoding="utf-8", newline="") as normalized_csv:
+                normalized_csv.write(text)
+            csv_files.append(csv_path)
+    return csv_files
 
 
-def run_converter(data_dir: Path, work_dir: Path, source_period: str, limit=None) -> list[Path]:
-    # The converter resolves data/ and kv.csv relative to its working directory.
-    # Keep the large, persistent pair cache in the repository, but give the
-    # temporary conversion workspace a copy so a failed run cannot truncate it.
-    if KV_CACHE_FILE.exists():
-        shutil.copy2(KV_CACHE_FILE, work_dir / "kv.csv")
-
-    print("Running the existing csv_to_monthly_sql.py converter...")
-    subprocess.run(
-        [
-            sys.executable,
-            str(CONVERTER),
-            *(["--limit", str(limit)] if limit is not None else []),
-        ],
-        cwd=work_dir,
-        check=True,
-    )
-
-    sql_dir = work_dir / "seeds_by_month_csv"
-    create_tables = sql_dir / "00_create_tables.sql"
-    if not create_tables.exists():
-        raise RuntimeError("Converter did not create 00_create_tables.sql")
-    month_files = sorted(sql_dir.glob(f"rides_{source_period}*.sql"))
-    if len(source_period) == 6:
-        month_files = [path for path in month_files if path.stem == f"rides_{source_period}"]
-    if not month_files:
-        raise RuntimeError(f"Converter did not create ride SQL for {source_period}")
-
-    converted_cache = work_dir / "kv.csv"
-    if converted_cache.exists():
-        converted_cache.replace(KV_CACHE_FILE)
-    return month_files
+def load_stats_cache_module():
+    spec = importlib.util.spec_from_file_location("baywheelin_stats_cache", STATS_CACHE_SCRIPT)
+    if not spec or not spec.loader:
+        raise RuntimeError(f"Could not load {STATS_CACHE_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def split_sql_file(sql_file: Path, batch_size: int = 10_000) -> list[Path]:
-    """Split a large one-insert-per-line file into D1-sized request batches."""
-    batches = []
-    statements = []
-    part_number = 1
+def import_archive(period: str, key: str, stats_cache) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"baywheelin-{period}-") as temp:
+        csv_files = download_and_extract(key, Path(temp))
+        months = month_stats_from_csv(csv_files)
+        if not months:
+            raise RuntimeError(f"No station/month data found in {key}")
 
-    def write_batch(lines: list[str], number: int) -> Path:
-        batch_file = sql_file.with_name(f"{sql_file.stem}.part-{number:04d}.sql")
-        with batch_file.open("w", encoding="utf-8", newline="") as output:
-            output.writelines(lines)
-        return batch_file
+        if len(period) == 6 and period not in months:
+            found = ", ".join(sorted(months))
+            raise RuntimeError(f"Expected {period}, but {key} contains: {found}")
+        if len(period) == 4 and any(not month.startswith(period) for month in months):
+            raise RuntimeError(f"Annual archive {key} contains dates outside {period}")
 
-    with sql_file.open("r", encoding="utf-8") as source:
-        for line in source:
-            if line.lstrip().startswith("--"):
-                continue
-            statements.append(line)
-            if len(statements) >= batch_size:
-                batches.append(write_batch(statements, part_number))
-                part_number += 1
-                statements = []
-
-    if statements:
-        batches.append(write_batch(statements, part_number))
-    return batches
-
-
-def apply_to_d1(create_tables: Path, month_sql: Path) -> None:
-    def execute(sql_file: Path) -> None:
-        print(f"Applying {sql_file.name} to remote D1...")
-        subprocess.run(
-            [
-                "npx",
-                "wrangler",
-                "d1",
-                "execute",
-                "baywheels",
-                "--remote",
-                "--file",
-                str(sql_file),
-                "--yes",
-            ],
-            cwd=REPO_ROOT,
-            check=True,
-        )
-
-    execute(create_tables)
-    batches = split_sql_file(month_sql)
-    print(f"Loading {month_sql.name} in {len(batches)} D1 batches...")
-    for index, batch in enumerate(batches, 1):
-        print(f"Applying batch {index}/{len(batches)}: {batch.name}")
-        execute(batch)
-
-
-def check_d1_connection() -> None:
-    """Fail before expensive downloads when the remote database is unavailable."""
-    print("Checking remote D1 access...")
-    subprocess.run(
-        [
-            "npx",
-            "wrangler",
-            "d1",
-            "execute",
-            "baywheels",
-            "--remote",
-            "--command",
-            "SELECT 1",
-            "--yes",
-        ],
-        cwd=REPO_ROOT,
-        check=True,
-    )
+        for month, stats in sorted(months.items()):
+            print(f"Writing compact stats and {sum(len(s['routeCounts']) for s in stats.values())} route counts for {month[:4]}-{month[4:]}...")
+            stats_cache.upload_month(month, stats_cache.kv_entries(month, stats))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "month",
-        nargs="?",
-        type=normalize_month,
-        help="Month to import: YYYY-MM or YYYYMM. Omit to import every available month.",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        help="Process at most this many rides (useful for a small test import).",
+        "periods",
+        nargs="*",
+        type=normalize_period,
+        help="Month (YYYY-MM) or the yearly archive (2017). Omit to process all source archives.",
     )
     args = parser.parse_args()
-    if args.limit is not None and args.limit < 1:
-        parser.error("--limit must be at least 1")
 
     source_keys = list_source_keys()
-    if args.month:
-        months_to_import = [(args.month, find_source_key(args.month, source_keys))]
+    if args.periods:
+        archives = [
+            (period, find_source_key(period, source_keys))
+            for period in dict.fromkeys(args.periods)
+        ]
     else:
-        months_to_import = source_keys
+        archives = source_keys
+    if not archives:
+        raise RuntimeError("No Bay Wheels archives found")
 
-    if not months_to_import:
-        raise RuntimeError("No Bay Wheels monthly ZIP files were found")
-
-    check_d1_connection()
-    print(f"Found {len(months_to_import)} source archive(s) to import")
-    failed_months = []
-    for index, (month, source_key) in enumerate(months_to_import, 1):
-        period_label = f"{month[:4]}-{month[4:]}" if len(month) == 6 else month
-        print(f"\n=== [{index}/{len(months_to_import)}] Importing {period_label} ===")
+    stats_cache = load_stats_cache_module()
+    print(f"Found {len(archives)} archive(s) to summarize")
+    failed = []
+    for index, (period, key) in enumerate(archives, 1):
+        label = f"{period[:4]}-{period[4:]}" if len(period) == 6 else period
+        print(f"\n=== [{index}/{len(archives)}] Summarizing {label} ===")
         try:
-            with tempfile.TemporaryDirectory(prefix=f"baywheelin-{month}-") as temp:
-                work_dir = Path(temp)
-                data_dir = download_and_extract(source_key, work_dir)
-                month_files = run_converter(data_dir, work_dir, month, args.limit)
-                for month_sql in month_files:
-                    apply_to_d1(
-                        work_dir / "seeds_by_month_csv" / "00_create_tables.sql",
-                        month_sql,
-                    )
-                    imported_month = month_sql.stem.removeprefix("rides_")
-                    subprocess.run(
-                        [sys.executable, str(STATS_CACHE_SCRIPT), imported_month],
-                        cwd=REPO_ROOT,
-                        check=True,
-                    )
+            import_archive(period, key, stats_cache)
         except Exception as error:
-            if args.month:
-                raise
-            failed_months.append((month, str(error)))
-            print(f"FAILED {period_label}: {error}", file=sys.stderr)
-            print("Continuing with the next source archive...", file=sys.stderr)
+            failed.append((label, str(error)))
+            print(f"FAILED {label}: {error}", file=sys.stderr)
 
-    imported_count = len(months_to_import) - len(failed_months)
-    print(
-        f"Imported {imported_count}/{len(months_to_import)} source archive(s) "
-        "into remote D1."
-    )
-    if failed_months:
-        print("Failed source archives:", file=sys.stderr)
-        for month, error in failed_months:
-            period_label = f"{month[:4]}-{month[4:]}" if len(month) == 6 else month
-            print(f"  {period_label}: {error}", file=sys.stderr)
+    if failed:
+        print("Failed archives:", file=sys.stderr)
+        for label, error in failed:
+            print(f"  {label}: {error}", file=sys.stderr)
         raise SystemExit(1)
+    print(f"Summarized {len(archives)} archive(s) into KV.")
 
 
 if __name__ == "__main__":

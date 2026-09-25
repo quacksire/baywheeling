@@ -12,14 +12,19 @@ import { Drawer, DrawerTrigger, DrawerContent, DrawerTitle } from "@/components/
 import { AboutInfo } from "@/components/about-info";
 
 interface Ride {
-    ride_id: string;
-    rideable_type: string;
-    started_at: string;
+    ride_id?: string;
+    rideable_type: string | null;
+    started_at: string | null;
     start_station_name?: string;
-    end_station_name: string;
+    end_station_name: string | null;
     start_station_id?: string;
     end_station_id?: string;
+    start_lat?: number | null;
+    start_lng?: number | null;
+    end_lat?: number | null;
+    end_lng?: number | null;
     route_polyline?: string | null;
+    ride_count?: number;
 }
 
 interface RouteData {
@@ -33,7 +38,7 @@ interface CachedRoute {
     coordinates: [number, number][];
     duration: number;
     distance: number;
-    endStationName: string;
+    endStationName: string | null;
     rideCount: number; // Number of rides using this route
 }
 
@@ -42,6 +47,8 @@ interface StationStats {
     member_count: number;
     casual_count: number;
     false_starts: number;
+    avg_ride_seconds: number | null;
+    longest_ride_seconds: number | null;
     rideableTypes: Array<{ rideable_type: string; count: number }>;
     dayOfWeek: Array<{ day_num: string; count: number }>;
     destinations: Array<{ end_station_name: string; count: number }>;
@@ -490,69 +497,47 @@ export function StationLayer() {
         const abortController = new AbortController();
         const signal = abortController.signal;
 
-        const newCached = new Map(cachedRoutes);
-        const cachedCount = 0;
-
-        // Count rides that already have polylines in D1
-        const cachedRides: Ride[] = [];
-        const uncachedRides: Ride[] = [];
-
-        rides.forEach((ride) => {
-            if (ride.route_polyline && typeof ride.route_polyline === 'string' && ride.route_polyline.length > 0) {
-                cachedRides.push(ride);
-                if (map) map.triggerRepaint();
-            } else {
-                uncachedRides.push(ride);
-            }
-        });
-
-        setRoutesTotal(rides.length);
-        setRoutesLoading(0);
-        setCachedRoutes(new Map());
-        console.log('Routes loaded:', rides.length, 'Cached count:', cachedRides.length, 'Uncached count:', uncachedRides.length);
-
-        // Group rides by route (start_station_id:end_station_id) to count duplicates
+        const newCached = new Map<string, CachedRoute>();
         const routeGroups = new Map<string, Ride[]>();
-        cachedRides.forEach((ride) => {
+        rides.forEach((ride) => {
+            if (!ride.start_station_id || !ride.end_station_id) return;
             const routeKey = `${ride.start_station_id}:${ride.end_station_id}`;
-            if (!routeGroups.has(routeKey)) {
-                routeGroups.set(routeKey, []);
-            }
-            routeGroups.get(routeKey)!.push(ride);
+            const group = routeGroups.get(routeKey) ?? [];
+            group.push(ride);
+            routeGroups.set(routeKey, group);
         });
 
-        // Add all cached routes immediately
-        routeGroups.forEach((groupRides, routeKey) => {
-            const ride = groupRides[0]; // Use first ride as template
+        const routeRideCount = (group: Ride[]) =>
+            group.reduce((total, ride) => total + (ride.ride_count ?? 1), 0);
+        const uncachedRouteGroups = new Map<string, Ride[]>();
+        let cachedRouteCount = 0;
+        for (const [routeKey, groupRides] of routeGroups) {
+            const ride = groupRides[0];
+            if (!ride.route_polyline) {
+                uncachedRouteGroups.set(routeKey, groupRides);
+                continue;
+            }
+
             try {
-                const geojsonGeometry = polyline.toGeoJSON(ride.route_polyline!);
-                const routeData = {
-                    coordinates: geojsonGeometry.coordinates,
-                    duration: 0,
-                    distance: 0,
-                };
+                const geometry = polyline.toGeoJSON(ride.route_polyline);
                 newCached.set(routeKey, {
                     routeKey,
-                    ...routeData,
+                    coordinates: geometry.coordinates,
+                    duration: 0,
+                    distance: 0,
                     endStationName: ride.end_station_name,
-                    rideCount: groupRides.length,
+                    rideCount: routeRideCount(groupRides),
                 });
-            } catch (err) {
-                console.warn('Error converting polyline for route', routeKey, err);
+                cachedRouteCount++;
+            } catch (error) {
+                console.warn('Error converting polyline for route', routeKey, error);
+                uncachedRouteGroups.set(routeKey, groupRides);
             }
-        });
+        }
+
+        setRoutesTotal(routeGroups.size);
+        setRoutesLoading(cachedRouteCount);
         setCachedRoutes(newCached);
-        setRoutesLoading(cachedRides.length);
-
-
-        const uncachedRouteGroups = new Map<string, Ride[]>();
-        uncachedRides.forEach((ride) => {
-            const routeKey = `${ride.start_station_id}:${ride.end_station_id}`;
-            if (!uncachedRouteGroups.has(routeKey)) {
-                uncachedRouteGroups.set(routeKey, []);
-            }
-            uncachedRouteGroups.get(routeKey)!.push(ride);
-        });
         const uncachedRouteEntries = Array.from(uncachedRouteGroups.entries());
 
         // Concurrency limiter - these requests go through /api/route, which checks KV/D1 route caches first.
@@ -569,6 +554,21 @@ export function StationLayer() {
                 let startStation = ride.start_station_id ? stationMap[ride.start_station_id] : undefined;
                  let endStation = ride.end_station_id ? stationMap[ride.end_station_id] : undefined;
 
+                 if (!startStation && ride.start_lat != null && ride.start_lng != null) {
+                     startStation = { lat: ride.start_lat, lon: ride.start_lng, name: '' };
+                 }
+                 if (!endStation && ride.end_lat != null && ride.end_lng != null) {
+                     endStation = { lat: ride.end_lat, lon: ride.end_lng, name: ride.end_station_name || '' };
+                 }
+
+                 if (!startStation && selectedPoint) {
+                     startStation = {
+                         lat: selectedPoint.coordinates[1],
+                         lon: selectedPoint.coordinates[0],
+                         name: selectedPoint.name,
+                     };
+                 }
+
                  // If stations not found by ID, try to find by name in stationMap
                  if (!startStation && ride.start_station_name) {
                      startStation = Object.values(stationMap).find(s => s.name === ride.start_station_name);
@@ -578,20 +578,19 @@ export function StationLayer() {
                  }
 
                  if (!startStation || !endStation) {
-                      setRoutesLoading(prev => prev + groupRides.length);
+                      setRoutesLoading(prev => prev + 1);
                       continue;
                   }
 
                 activeRequests++;
 
-                const routeUrl = new URL('/api/route', window.location.origin);
+                 const routeUrl = new URL('/api/route', window.location.origin);
                 routeUrl.searchParams.set('start_lon', startStation.lon.toString());
                 routeUrl.searchParams.set('start_lat', startStation.lat.toString());
                 routeUrl.searchParams.set('end_lon', endStation.lon.toString());
                 routeUrl.searchParams.set('end_lat', endStation.lat.toString());
                 routeUrl.searchParams.set('start_station_id', ride.start_station_id || '');
                 routeUrl.searchParams.set('end_station_id', ride.end_station_id || '');
-                routeUrl.searchParams.set('ride_id', ride.ride_id);
                 routeUrl.searchParams.set('year_month', selectedMonth);
 
                 const requestController = new AbortController();
@@ -621,16 +620,16 @@ export function StationLayer() {
                                 routeKey,
                                 ...routeData,
                                 endStationName: ride.end_station_name,
-                                rideCount: groupRides.length,
+                                rideCount: routeRideCount(groupRides),
                             });
                             console.log('Added route for ride', ride.ride_id, 'between', routeKey);
                             setCachedRoutes(new Map(newCached));
                             if (map) map.triggerRepaint();
 
-                            setRoutesLoading(prev => prev + groupRides.length);
+                            setRoutesLoading(prev => prev + 1);
                         } else {
                             console.warn('No routes in response for ride', ride.ride_id, data);
-                            setRoutesLoading(prev => prev + groupRides.length);
+                            setRoutesLoading(prev => prev + 1);
                         }
                     })
                     .catch(err => {
@@ -640,7 +639,7 @@ export function StationLayer() {
                         } else {
                             console.error('Error fetching route for ride', ride.ride_id, err);
                         }
-                        setRoutesLoading(prev => prev + groupRides.length);
+                        setRoutesLoading(prev => prev + 1);
                     })
                     .finally(() => {
                         window.clearTimeout(timeout);
@@ -714,7 +713,7 @@ export function StationLayer() {
                         {selectedPoint ? (
                             <StationInfoContent
                                 stationName={selectedPoint.name}
-                                ridesCount={rides.length}
+                                ridesCount={rides.reduce((total, ride) => total + (ride.ride_count ?? 1), 0)}
                                 selectedMonth={selectedMonth}
                                 selectedYear={selectedYear}
                                 selectedMonthNum={selectedMonthNum}

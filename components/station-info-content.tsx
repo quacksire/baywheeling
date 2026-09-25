@@ -33,6 +33,8 @@ interface StationStats {
   member_count: number;
   casual_count: number;
   false_starts: number;
+  avg_ride_seconds: number | null;
+  longest_ride_seconds: number | null;
   rideableTypes: Array<{ rideable_type: string; count: number }>;
   dayOfWeek: Array<{ day_num: string; count: number }>;
   destinations: Array<{ end_station_name: string; count: number }>;
@@ -73,6 +75,21 @@ const monthNames = [
     "November",
     "December",
 ];
+
+function formatDuration(seconds: number | null | undefined) {
+    if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
+
+    const totalSeconds = Math.round(seconds);
+    const days = Math.floor(totalSeconds / 86_400);
+    const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+    const minutes = Math.floor((totalSeconds % 3_600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+
+    if (days) return `${days}d ${hours}h`;
+    if (hours) return `${hours}h ${minutes}m`;
+    if (minutes) return `${minutes}m ${remainingSeconds}s`;
+    return `${remainingSeconds}s`;
+}
 /*
 These stations don't have physical docks but are included in the dataset as virtual stations representing popular ride start/end points.
 But they don't have a ride data associated with them, so we should exclude them from the station stats view to avoid confusion.
@@ -342,6 +359,22 @@ export function   StationInfoContent({
                   <Skeleton className="h-5 w-14 bg-background/40" />
                   <Skeleton className="h-3 w-12 bg-background/40" />
                 </div>
+              )}
+            </div>
+            <div className="p-2 bg-muted rounded-md">
+              <p className="text-xs text-muted-foreground">Avg Ride Time</p>
+              {stats ? (
+                <p className="font-bold text-lg">{formatDuration(stats.avg_ride_seconds)}</p>
+              ) : (
+                <Skeleton className="mt-1 h-5 w-16 bg-background/40" />
+              )}
+            </div>
+            <div className="p-2 bg-muted rounded-md">
+              <p className="text-xs text-muted-foreground">Longest Ride</p>
+              {stats ? (
+                <p className="font-bold text-lg">{formatDuration(stats.longest_ride_seconds)}</p>
+              ) : (
+                <Skeleton className="mt-1 h-5 w-16 bg-background/40" />
               )}
             </div>
           </div>
