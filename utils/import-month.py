@@ -70,15 +70,38 @@ def download_and_extract(key: str, destination: Path) -> list[Path]:
     archive = destination / key
     url = f"{S3_BUCKET_URL}/{key}"
     print(f"Downloading {url}")
-    for attempt in range(1, 4):
+    for attempt in range(1, 6):
         try:
-            urllib.request.urlretrieve(url, archive)
+            offset = archive.stat().st_size if archive.exists() else 0
+            request = urllib.request.Request(
+                url,
+                headers={"Range": f"bytes={offset}-"} if offset else {},
+            )
+            with urllib.request.urlopen(request, timeout=60) as response:
+                resumed = offset > 0 and response.status == 206
+                mode = "ab" if resumed else "wb"
+                start = offset if resumed else 0
+                expected = response.headers.get("Content-Length")
+                expected_size = start + int(expected) if expected else None
+                downloaded = start
+                next_report = downloaded + 32 * 1024 * 1024
+                with archive.open(mode) as target:
+                    while chunk := response.read(1024 * 1024):
+                        target.write(chunk)
+                        downloaded += len(chunk)
+                        if downloaded >= next_report:
+                            print(f"Downloaded {downloaded / (1024 * 1024):.0f} MB...")
+                            next_report = downloaded + 32 * 1024 * 1024
+                if expected_size is not None and downloaded != expected_size:
+                    raise OSError(
+                        f"Incomplete download: received {downloaded} of {expected_size} bytes"
+                    )
             break
         except Exception:
-            if attempt == 3:
+            if attempt == 5:
                 raise
-            delay = attempt * 2
-            print(f"Download attempt {attempt} failed; retrying in {delay}s...")
+            delay = 2 ** attempt
+            print(f"Download attempt {attempt} failed; resuming in {delay}s...")
             time.sleep(delay)
 
     extract_dir = destination / "data"
@@ -125,13 +148,13 @@ def load_stats_cache_module():
 def import_archive(period: str, key: str, stats_cache) -> None:
     with tempfile.TemporaryDirectory(prefix=f"baywheelin-{period}-") as temp:
         csv_files = download_and_extract(key, Path(temp))
-        months = month_stats_from_csv(csv_files)
+        months = month_stats_from_csv(
+            csv_files,
+            month_override=period if len(period) == 6 else None,
+        )
         if not months:
             raise RuntimeError(f"No station/month data found in {key}")
 
-        if len(period) == 6 and period not in months:
-            found = ", ".join(sorted(months))
-            raise RuntimeError(f"Expected {period}, but {key} contains: {found}")
         if len(period) == 4 and any(not month.startswith(period) for month in months):
             raise RuntimeError(f"Annual archive {key} contains dates outside {period}")
 

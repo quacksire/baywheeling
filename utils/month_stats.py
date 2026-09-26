@@ -46,9 +46,10 @@ def empty_station_stats():
     }
 
 
-def month_stats_from_csv(csv_files):
-    """Return {YYYYMM: {start_station_id: snapshot}} for one or more CSV files."""
+def month_stats_from_csv(csv_files, month_override=None):
+    """Summarize CSV rows, optionally assigning a rolling archive to its YYYYMM label."""
     months = defaultdict(dict)
+    source_months = set()
 
     for csv_file in csv_files:
         with Path(csv_file).open(encoding="utf-8", newline="") as source:
@@ -58,10 +59,12 @@ def month_stats_from_csv(csv_files):
                 month_match = re.match(r"^(\d{4})-(\d{2})", started_at)
                 if not month_match:
                     continue
-                month = "".join(month_match.groups())
+                source_month = "".join(month_match.groups())
                 station_id = str(row.get("start_station_id") or "").strip()
                 if not station_id:
                     continue
+                source_months.add(source_month)
+                month = month_override or source_month
 
                 station_stats = months[month].setdefault(station_id, empty_station_stats())
                 station_stats["total_rides"] += 1
@@ -110,6 +113,10 @@ def month_stats_from_csv(csv_files):
                     for coordinate in ("start_lat", "start_lng", "end_lat", "end_lng"):
                         if route[coordinate] is None:
                             route[coordinate] = parse_coordinate(row.get(coordinate))
+
+    if month_override and month_override not in source_months:
+        found = ", ".join(sorted(source_months))
+        raise ValueError(f"Expected archive month {month_override}, but CSV dates contain: {found}")
 
     finalized = {}
     for month, stations in months.items():

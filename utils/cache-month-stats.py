@@ -300,9 +300,25 @@ def upload_month(month: str, entries: list[dict[str, str]]) -> None:
         for batch_number, start in enumerate(range(0, len(entries), 10_000), 1):
             path = Path(temp) / f"stats-{month}-{batch_number:04d}.json"
             path.write_text(json.dumps(entries[start:start + 10_000]), encoding="utf-8")
-            wrangler(
-                "kv", "bulk", "put", str(path), "--binding", "baywheel_kv", "--remote",
-            )
+            for attempt in range(1, 6):
+                try:
+                    wrangler(
+                        "kv", "bulk", "put", str(path), "--binding", "baywheel_kv", "--remote",
+                    )
+                    break
+                except RuntimeError as error:
+                    message = str(error).lower()
+                    transient = any(term in message for term in (
+                        "fetch failed", "upstream service unavailable", "temporarily unavailable",
+                        "connection reset", "connection refused", "connection timed out",
+                        "network", "econn", "enotfound", "nodename nor servname",
+                        "too many requests", "429", "502", "503", "504",
+                    ))
+                    if not transient or attempt == 5:
+                        raise
+                    delay = 2 ** attempt
+                    print(f"KV upload attempt {attempt} failed; retrying in {delay}s.")
+                    time.sleep(delay)
 
 
 def refresh_month(month: str) -> None:
