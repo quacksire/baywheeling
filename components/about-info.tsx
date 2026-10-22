@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "lucide-react";
 import {useMap} from "@/components/ui/map";
 import { StationLeaderboard } from "@/components/station-leaderboard";
@@ -40,32 +41,36 @@ export function AboutInfo({ isDesktop, onSelectStation, availableMonths, selecte
             />
 
             {!isDesktop && (
-                <div className="bg-gray-900 rounded-lg p-4 space-y-3">
-                    <p className="font-semibold text-white">This map opens up on a larger screen</p>
-                    <p className="text-xs text-gray-400">
-                        You can still browse here, but the full station and route view is easier to explore on desktop.
-                    </p>
-                    <Button
-                        onClick={() => {
-                            if (navigator.share) {
-                                navigator.share({
-                                    title: 'Baywheeling',
-                                    text: 'Take a look at this Bay Area bike-share map',
-                                    url: window.location.href,
-                                }).catch(err => console.log('Error sharing:', err));
-                            } else {
-                                navigator.clipboard.writeText(window.location.href).then(() => {
-                                    alert('Map link copied.');
-                                });
-                            }
-                        }}
-                        size="sm"
-                        className="w-full gap-2"
-                    >
-                        <Link className="w-4 h-4" />
-                        Send map link
-                    </Button>
-                </div>
+                <Card className="gap-3 rounded-lg border-white/10 bg-neutral-950 p-4 py-4 shadow-none">
+                    <CardHeader className="gap-1 p-0">
+                        <CardTitle className="text-sm font-semibold text-white">This map opens up on a larger screen</CardTitle>
+                        <CardDescription className="text-xs text-neutral-400">
+                            You can still browse here, but the full station and route view is easier to explore on desktop.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <Button
+                            onClick={() => {
+                                if (navigator.share) {
+                                    navigator.share({
+                                        title: 'Baywheeling',
+                                        text: 'Take a look at this Bay Area bike-share map',
+                                        url: window.location.href,
+                                    }).catch(err => console.log('Error sharing:', err));
+                                } else {
+                                    navigator.clipboard.writeText(window.location.href).then(() => {
+                                        alert('Map link copied.');
+                                    });
+                                }
+                            }}
+                            size="sm"
+                            className="w-full gap-2"
+                        >
+                            <Link className="w-4 h-4" />
+                            Send map link
+                        </Button>
+                    </CardContent>
+                </Card>
             )}
 
             <section className="space-y-3">
