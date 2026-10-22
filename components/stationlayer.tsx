@@ -705,7 +705,21 @@ export function StationLayer() {
                                 onRefreshMonths={refreshAvailableMonths}
                             />
                         ) : (
-                            <AboutInfo isDesktop={isDesktop} />
+                            <AboutInfo
+                                isDesktop={isDesktop}
+                                availableMonths={availableMonths}
+                                selectedMonth={selectedMonth}
+                                onSelectStation={(station, yearMonth) => {
+                                    setSelectedYearMonth(yearMonth);
+                                    latestMonthInitializedStation.current = station.shortName;
+                                    setSelectedPoint({
+                                        id: station.id,
+                                        short_name: station.shortName,
+                                        name: station.name,
+                                        coordinates: station.coordinates,
+                                    });
+                                }}
+                            />
                         )}
 
                         <div className="mt-8 pt-6">

@@ -3,16 +3,27 @@
 import { Button } from "@/components/ui/button";
 import { Link } from "lucide-react";
 import {useMap} from "@/components/ui/map";
+import { StationLeaderboard } from "@/components/station-leaderboard";
+
+interface StationSelection {
+    id: string;
+    shortName: string;
+    name: string;
+    coordinates: [number, number];
+}
 
 interface StationInfoDrawerProps {
     isDesktop: boolean;
+    onSelectStation: (station: StationSelection, yearMonth: string) => void;
+    availableMonths: string[];
+    selectedMonth: string;
 }
 
 const CENTER_SF = [-122.4194, 37.7749];
 const CENTER_OAK = [-122.2711, 37.8044];
 const CENTER_SJ = [-121.8863, 37.3382];
 
-export function AboutInfo({ isDesktop }: StationInfoDrawerProps) {
+export function AboutInfo({ isDesktop, onSelectStation, availableMonths, selectedMonth }: StationInfoDrawerProps) {
 
     const { map } = useMap();
     return (
@@ -21,6 +32,12 @@ export function AboutInfo({ isDesktop }: StationInfoDrawerProps) {
                 <h2 className="text-2xl font-semibold text-white mb-1">Baywheeling</h2>
                 <p className="text-gray-400 text-sm">A closer look at how BayWheels moves through the Bay.</p>
             </div>
+
+            <StationLeaderboard
+                onSelectStation={onSelectStation}
+                availableMonths={availableMonths}
+                initialMonth={selectedMonth}
+            />
 
             {!isDesktop && (
                 <div className="bg-gray-900 rounded-lg p-4 space-y-3">
@@ -61,7 +78,7 @@ export function AboutInfo({ isDesktop }: StationInfoDrawerProps) {
             <section className="space-y-3">
                 <h3 className="text-lg font-semibold text-white">How It Works</h3>
                 <p>
-                    Click any station to open its monthly snapshot. The panel tracks ride totals, busiest hours, weekday patterns, bike mix, and the destinations that show up most often.
+                    Compare the busiest stations across San Francisco, Oakland, and San Jose, including the top departure and arrival docks. Click a ranked station or any map point to open its monthly snapshot with ride totals, busiest hours, weekday patterns, bike mix, and popular destinations.
                 </p>
 
                 {isDesktop && (
