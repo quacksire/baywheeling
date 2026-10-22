@@ -14,6 +14,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 
 type City = 'All' | 'San Francisco' | 'Oakland' | 'San Jose'
@@ -236,6 +237,14 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
 
                 return (
                   <li key={station.station_id} className="relative">
+                    <Progress
+                      value={maxCount ? (count / maxCount) * 100 : 0}
+                      aria-label={`${station.station_name} usage`}
+                      aria-valuetext={`${count.toLocaleString()} ${metrics.find((item) => item.id === metric)?.countLabel}`}
+                      className="pointer-events-none absolute inset-0 z-0 flex-nowrap gap-0 p-1"
+                      trackClassName="h-full rounded-sm bg-white/[0.025]"
+                      indicatorClassName="bg-white/[0.07] transition-[width] duration-200 ease-out motion-reduce:transition-none"
+                    />
                     <Button
                       type="button"
                       disabled={!isClickable}
@@ -251,11 +260,6 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
                       variant="ghost"
                       className="group/button relative z-10 h-auto min-h-11 w-full justify-start gap-3 overflow-hidden rounded-md px-2 py-2 text-left transition-transform duration-150 ease-out active:scale-[0.98] motion-reduce:transition-none hover:bg-white/5 disabled:cursor-default disabled:opacity-100"
                     >
-                      <span
-                        className="absolute inset-y-1 left-0 w-full origin-left rounded-sm bg-white/[0.07] transition-transform duration-200 ease-out motion-reduce:transition-none"
-                        style={{ transform: `scaleX(${maxCount ? Math.max(0.05, count / maxCount) : 0})` }}
-                        aria-hidden="true"
-                      />
                       <span className="relative w-5 shrink-0 text-right font-mono text-[11px] text-neutral-500">{String(index + 1).padStart(2, '0')}</span>
                       <span className="relative min-w-0 flex-1">
                         <span className="block truncate text-xs text-neutral-100 group-hover/button:text-white">{station.station_name}</span>
