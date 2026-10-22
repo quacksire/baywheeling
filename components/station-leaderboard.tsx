@@ -2,7 +2,20 @@
 
 import * as baywheelStations from '@/data/baywheels_station_information.json'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, MapPin } from 'lucide-react'
+import { ChevronDown, MapPin } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Progress, ProgressIndicator, ProgressTrack } from '@/components/ui/progress'
+import { Spinner } from '@/components/ui/spinner'
 
 type City = 'All' | 'San Francisco' | 'Oakland' | 'San Jose'
 type Metric = 'total' | 'starts' | 'ends'
@@ -139,64 +152,79 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
   const isLoading = loadingLeaderboard || (availableMonths.length > 0 && !selectedMonth)
 
   return (
-    <section className="overflow-hidden rounded-lg border border-white/10 bg-black/35" aria-labelledby="station-leaderboard-title">
-      <div className="flex items-start justify-between gap-3 border-b border-white/10 p-4">
+    <Card className="overflow-hidden rounded-lg border-white/10 bg-black/35 py-0 text-white shadow-none" aria-labelledby="station-leaderboard-title">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 border-b border-white/10 p-4">
         <div>
           <p className="mb-1 text-[10px] uppercase tracking-[0.22em] text-white/70">Monthly rankings</p>
-          <h3 id="station-leaderboard-title" className="text-sm font-semibold text-white">Station leaderboard</h3>
+          <CardTitle id="station-leaderboard-title" className="text-sm font-semibold text-white">Station leaderboard</CardTitle>
         </div>
-        <label className="sr-only" htmlFor="leaderboard-month">Choose leaderboard month</label>
-        <select
-          id="leaderboard-month"
-          value={selectedMonth}
-          onChange={(event) => {
-            latestMonthRequest.current = false
-            setSelectedMonth(event.target.value)
-          }}
-          disabled={availableMonths.length === 0}
-          className="min-h-11 w-[118px] min-w-0 rounded-md border border-white/15 bg-gray-950 px-2 py-1.5 text-xs text-gray-200 outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-50"
-        >
-          {availableMonths.length === 0 && <option value="">No months</option>}
-          {availableMonths.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}
-        </select>
-      </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            disabled={availableMonths.length === 0}
+            aria-label="Choose leaderboard month"
+            render={<Button variant="outline" className="min-h-11 w-[132px] justify-between border-white/15 bg-transparent px-2 text-xs text-gray-200 hover:bg-white/5 hover:text-white" />}
+          >
+            <span className="truncate">{selectedMonth ? formatMonth(selectedMonth) : 'No months'}</span>
+            <ChevronDown className="size-3.5 shrink-0 text-gray-400" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-64 min-w-[132px] border-white/10 bg-gray-950 text-gray-200">
+            <DropdownMenuRadioGroup
+              value={selectedMonth}
+              onValueChange={(value) => {
+                latestMonthRequest.current = false
+                setSelectedMonth(value)
+              }}
+            >
+              {availableMonths.map((month) => (
+                <DropdownMenuRadioItem key={month} value={month} className="focus:bg-white/10 focus:text-white">
+                  {formatMonth(month)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </CardHeader>
 
-      <div className="space-y-4 p-4">
-        <div className="grid grid-cols-4 gap-1 rounded-md bg-white/5 p-1" role="group" aria-label="Filter leaderboard by city">
+      <CardContent className="space-y-4 p-4">
+        <ButtonGroup className="grid w-full grid-cols-4 gap-1 rounded-md bg-white/5 p-1" aria-label="Filter leaderboard by city">
           {cities.map((cityOption) => (
-            <button
+            <Button
               key={cityOption}
               type="button"
               aria-pressed={city === cityOption}
               onClick={() => setCity(cityOption)}
-              className={`min-h-11 rounded px-1 py-1.5 text-[10px] transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${city === cityOption ? 'bg-white text-gray-950' : 'text-gray-400 hover:text-white'}`}
+              variant={city === cityOption ? 'default' : 'ghost'}
+              className={`h-auto min-h-11 min-w-0 rounded px-1 py-1.5 text-[10px] transition-transform duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none ${city === cityOption ? '' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}
             >
               {cityOption === 'San Francisco' ? 'SF' : cityOption === 'San Jose' ? 'SJ' : cityOption === 'Oakland' ? 'Oak' : 'All'}
-            </button>
+            </Button>
           ))}
-        </div>
+        </ButtonGroup>
 
-        <div className="flex gap-4 border-b border-white/10" role="group" aria-label="Rank stations by">
+        <ButtonGroup className="flex w-full gap-1 border-b border-white/10" aria-label="Rank stations by">
           {metrics.map((option) => (
-            <button
+            <Button
               key={option.id}
               type="button"
               aria-pressed={metric === option.id}
               onClick={() => setMetric(option.id)}
-              className={`-mb-px flex min-h-11 items-center border-b-2 pb-2 text-xs transition-[border-color,color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${metric === option.id ? 'border-white text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+              variant={metric === option.id ? 'default' : 'ghost'}
+              className={`h-auto min-h-11 flex-1 rounded-t-md rounded-b-none border-b-2 px-2 pb-2 text-xs transition-transform duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none ${metric === option.id ? 'border-white' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}
             >
               {option.label}
-            </button>
+            </Button>
           ))}
-        </div>
+        </ButtonGroup>
 
         <div className="min-h-[188px]">
           {isLoading ? (
             <div className="flex h-[188px] items-center justify-center gap-2 text-xs text-gray-400">
-              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> Loading rankings
+              <Spinner className="text-gray-300 motion-reduce:animate-none" /> Loading rankings
             </div>
           ) : error ? (
-            <p className="py-8 text-center text-xs text-gray-400">{error}</p>
+            <Alert className="my-6 border-white/10 bg-transparent text-gray-300">
+              <AlertDescription className="text-center text-gray-400">{error}</AlertDescription>
+            </Alert>
           ) : rankedStations.length === 0 ? (
             <p className="py-8 text-center text-xs text-gray-400">No station rides found for this month.</p>
           ) : (
@@ -208,8 +236,17 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
                 const cityShortName = cityShortNames[station.city] || station.city
 
                 return (
-                  <li key={station.station_id}>
-                    <button
+                  <li key={station.station_id} className="relative">
+                    <Progress
+                      value={maxCount ? (count / maxCount) * 100 : 0}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-2 inset-y-1/2 z-0 flex-nowrap -translate-y-1/2 gap-0"
+                    >
+                      <ProgressTrack className="h-[calc(100%-0.5rem)] rounded-sm bg-white/[0.025]">
+                        <ProgressIndicator className="bg-white/[0.07] transition-[width] duration-200 ease-out motion-reduce:transition-none" />
+                      </ProgressTrack>
+                    </Progress>
+                    <Button
                       type="button"
                       disabled={!isClickable}
                       onClick={() => {
@@ -221,16 +258,12 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
                           coordinates: [metadata.lon, metadata.lat],
                         }, selectedMonth)
                       }}
-                      className="group relative flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-md px-2 py-2 text-left transition-[background-color,transform] duration-150 ease-out active:scale-[0.98] motion-reduce:transition-none hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-default"
+                      variant="ghost"
+                      className="group/button relative z-10 h-auto min-h-11 w-full justify-start gap-3 overflow-hidden rounded-md px-2 py-2 text-left transition-transform duration-150 ease-out active:scale-[0.98] motion-reduce:transition-none hover:bg-white/5 disabled:cursor-default disabled:opacity-100"
                     >
-                      <span
-                        className="absolute inset-y-1 left-0 w-full origin-left rounded-sm bg-white/[0.07] transition-transform duration-200 ease-out motion-reduce:transition-none"
-                        style={{ transform: `scaleX(${Math.max(0.05, count / maxCount)})` }}
-                        aria-hidden="true"
-                      />
                       <span className="relative w-5 shrink-0 text-right font-mono text-[11px] text-gray-500">{String(index + 1).padStart(2, '0')}</span>
                       <span className="relative min-w-0 flex-1">
-                        <span className="block truncate text-xs text-gray-100 group-hover:text-white">{station.station_name}</span>
+                        <span className="block truncate text-xs text-gray-100 group-hover/button:text-white">{station.station_name}</span>
                         <span className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-500">
                           {city === 'All' && <><MapPin className="h-2.5 w-2.5" />{cityShortName}<span className="px-0.5">·</span></>}
                           {metric === 'total' ? `${station.starts.toLocaleString()} starts · ${station.ends.toLocaleString()} ends` : city === 'All' ? cityShortName : metrics.find((item) => item.id === metric)?.countLabel}
@@ -240,7 +273,7 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
                         {count.toLocaleString()}
                         <span className="ml-1 text-[9px] font-sans text-gray-500">{metrics.find((item) => item.id === metric)?.countLabel}</span>
                       </span>
-                    </button>
+                    </Button>
                   </li>
                 )
               })}
@@ -250,7 +283,7 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
         <p className="text-[10px] leading-relaxed text-gray-500">
           {selectedMonth ? `${formatMonth(selectedMonth)} · ` : ''}Total uses = starts + ends. Select a station to open it on the map.
         </p>
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   )
 }
