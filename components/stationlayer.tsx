@@ -685,7 +685,7 @@ export function StationLayer() {
                         setActiveSnapPoint: setSnap
                     })}
                 >
-                    <DrawerContent className={`${isDesktop ? 'p-4 w-96 overflow-y-auto max-h-screen' : 'w-full mx-auto max-h-[calc(100dvh-0.5rem)] rounded-t-2xl border-t border-white/10 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] overflow-y-auto overscroll-y-contain !touch-pan-y'}`}>
+                    <DrawerContent className={`${isDesktop ? 'p-4 w-96 overflow-y-auto max-h-screen' : 'w-full mx-auto !max-h-[calc(100dvh-0.5rem)] rounded-t-2xl border-t border-white/10 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] overflow-y-auto overscroll-y-contain !touch-pan-y'}`}>
                         {!isDesktop && <DrawerHandle />}
                         <DrawerTitle className="sr-only">{selectedPoint?.name || 'Station Info'}</DrawerTitle>
                         {selectedPoint ? (
