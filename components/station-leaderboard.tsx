@@ -142,7 +142,7 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
     <section className="overflow-hidden rounded-lg border border-white/10 bg-black/35" aria-labelledby="station-leaderboard-title">
       <div className="flex items-start justify-between gap-3 border-b border-white/10 p-4">
         <div>
-          <p className="mb-1 text-[10px] uppercase tracking-[0.22em] text-blue-300/80">Monthly rankings</p>
+          <p className="mb-1 text-[10px] uppercase tracking-[0.22em] text-white/70">Monthly rankings</p>
           <h3 id="station-leaderboard-title" className="text-sm font-semibold text-white">Station leaderboard</h3>
         </div>
         <label className="sr-only" htmlFor="leaderboard-month">Choose leaderboard month</label>
@@ -154,7 +154,7 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
             setSelectedMonth(event.target.value)
           }}
           disabled={availableMonths.length === 0}
-          className="min-h-11 w-[118px] min-w-0 rounded-md border border-white/15 bg-gray-950 px-2 py-1.5 text-xs text-gray-200 outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70 disabled:opacity-50"
+          className="min-h-11 w-[118px] min-w-0 rounded-md border border-white/15 bg-gray-950 px-2 py-1.5 text-xs text-gray-200 outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-50"
         >
           {availableMonths.length === 0 && <option value="">No months</option>}
           {availableMonths.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}
@@ -169,7 +169,7 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
               type="button"
               aria-pressed={city === cityOption}
               onClick={() => setCity(cityOption)}
-              className={`min-h-11 rounded px-1 py-1.5 text-[10px] transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70 ${city === cityOption ? 'bg-blue-300 text-gray-950' : 'text-gray-400 hover:text-white'}`}
+              className={`min-h-11 rounded px-1 py-1.5 text-[10px] transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${city === cityOption ? 'bg-white text-gray-950' : 'text-gray-400 hover:text-white'}`}
             >
               {cityOption === 'San Francisco' ? 'SF' : cityOption === 'San Jose' ? 'SJ' : cityOption === 'Oakland' ? 'Oak' : 'All'}
             </button>
@@ -183,7 +183,7 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
               type="button"
               aria-pressed={metric === option.id}
               onClick={() => setMetric(option.id)}
-              className={`-mb-px flex min-h-11 items-center border-b-2 pb-2 text-xs transition-[border-color,color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70 ${metric === option.id ? 'border-blue-300 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+              className={`-mb-px flex min-h-11 items-center border-b-2 pb-2 text-xs transition-[border-color,color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${metric === option.id ? 'border-white text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
             >
               {option.label}
             </button>
@@ -221,10 +221,10 @@ export function StationLeaderboard({ onSelectStation, availableMonths, initialMo
                           coordinates: [metadata.lon, metadata.lat],
                         }, selectedMonth)
                       }}
-                      className="group relative flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-md px-2 py-2 text-left transition-[background-color,transform] duration-150 ease-out active:scale-[0.98] motion-reduce:transition-none hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70 disabled:cursor-default"
+                      className="group relative flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-md px-2 py-2 text-left transition-[background-color,transform] duration-150 ease-out active:scale-[0.98] motion-reduce:transition-none hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-default"
                     >
                       <span
-                        className="absolute inset-y-1 left-0 w-full origin-left rounded-sm bg-blue-300/[0.07] transition-transform duration-200 ease-out motion-reduce:transition-none"
+                        className="absolute inset-y-1 left-0 w-full origin-left rounded-sm bg-white/[0.07] transition-transform duration-200 ease-out motion-reduce:transition-none"
                         style={{ transform: `scaleX(${Math.max(0.05, count / maxCount)})` }}
                         aria-hidden="true"
                       />

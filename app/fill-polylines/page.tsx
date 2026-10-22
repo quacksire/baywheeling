@@ -363,7 +363,7 @@ export default function FillPolylines() {
               [{Math.round((cachingProgress.current / cachingProgress.total) * 100).toString().padStart(3)}%]
             </div>
             <div className="flex-1 bg-muted">
-              <div className="bg-blue-500 h-full" style={{ width: `${(cachingProgress.current / cachingProgress.total) * 100}%` }} />
+              <div className="bg-white h-full" style={{ width: `${(cachingProgress.current / cachingProgress.total) * 100}%` }} />
             </div>
           </div>
         </div>

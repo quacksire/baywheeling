@@ -8,7 +8,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useMap, MapPopup, MapMarker, MarkerContent, MarkerLabel } from "@/components/ui/map";
 import { DeckGLRoutes } from "@/components/deck-gl-routes";
 import { StationInfoContent } from "@/components/station-info-content";
-import { Drawer, DrawerTrigger, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from "@/components/ui/drawer";
 import { AboutInfo } from "@/components/about-info";
 
 interface Ride {
@@ -678,13 +678,15 @@ export function StationLayer() {
                     modal={false}
                     dismissible={false}
                     disablePreventScroll={true}
+                    handleOnly={!isDesktop}
                     {...(!isDesktop && {
                         snapPoints: snapPoints,
                         activeSnapPoint: snap,
                         setActiveSnapPoint: setSnap
                     })}
                 >
-                    <DrawerContent className={`${isDesktop ? 'p-4 w-96 overflow-y-auto max-h-screen' : 'w-full mx-auto px-4 pb-4 overflow-y-scroll'}`}>
+                    <DrawerContent className={`${isDesktop ? 'p-4 w-96 overflow-y-auto max-h-screen' : 'w-full mx-auto max-h-[calc(100dvh-0.5rem)] rounded-t-2xl border-t border-white/10 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] overflow-y-auto overscroll-y-contain !touch-pan-y'}`}>
+                        {!isDesktop && <DrawerHandle />}
                         <DrawerTitle className="sr-only">{selectedPoint?.name || 'Station Info'}</DrawerTitle>
                         {selectedPoint ? (
                             <StationInfoContent
@@ -726,7 +728,7 @@ export function StationLayer() {
                             <div className="text-xs text-muted-foreground space-y-2">
                                 <div>
                                     {selectedPoint && (
-                                        <a href="#" className="text-blue-400 hover:text-blue-300 transition-colors"
+                                        <a href="#" className="text-gray-300 hover:text-white transition-colors"
 
                                            onClick={(e) => {
                                                e.preventDefault();
