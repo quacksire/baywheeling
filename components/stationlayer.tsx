@@ -685,64 +685,65 @@ export function StationLayer() {
                         setActiveSnapPoint: setSnap
                     })}
                 >
-                    <DrawerContent className={`${isDesktop ? 'p-4 w-96 overflow-y-auto max-h-screen' : 'w-full mx-auto !max-h-[calc(100dvh-0.5rem)] rounded-t-2xl border-t border-white/10 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] overflow-y-auto overscroll-y-contain !touch-pan-y'}`}>
+                    <DrawerContent className={`${isDesktop ? 'p-4 w-96 overflow-y-auto max-h-screen' : 'w-full mx-auto !mt-0 !h-[calc(100dvh-0.5rem)] !max-h-[calc(100dvh-0.5rem)] rounded-t-2xl border-t border-white/10 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] overflow-hidden'}`}>
                         {!isDesktop && <DrawerHandle />}
                         <DrawerTitle className="sr-only">{selectedPoint?.name || 'Station Info'}</DrawerTitle>
-                        {selectedPoint ? (
-                            <StationInfoContent
-                                stationName={selectedPoint.name}
-                                ridesCount={rides.length}
-                                selectedMonth={selectedMonth}
-                                selectedYear={selectedYear}
-                                selectedMonthNum={selectedMonthNum}
-                                stats={stats}
-                                loadingRides={loadingRides}
-                                routesLoading={routesLoading}
-                                routesTotal={routesTotal}
-                                isCurrentMonth={isCurrentMonth()}
-                                availableMonths={availableMonths}
-                                onPreviousMonth={handlePreviousMonth}
-                                onNextMonth={handleNextMonth}
-                                onMonthChange={handleMonthChange}
-                                onRefreshMonths={refreshAvailableMonths}
-                            />
-                        ) : (
-                            <AboutInfo
-                                isDesktop={isDesktop}
-                                availableMonths={availableMonths}
-                                selectedMonth={selectedMonth}
-                                onSelectStation={(station, yearMonth) => {
-                                    setSelectedYearMonth(yearMonth);
-                                    latestMonthInitializedStation.current = station.shortName;
-                                    setSelectedPoint({
-                                        id: station.id,
-                                        short_name: station.shortName,
-                                        name: station.name,
-                                        coordinates: station.coordinates,
-                                    });
-                                }}
-                            />
-                        )}
+                        <div className={isDesktop ? '' : 'min-h-0 flex-1 overflow-y-auto overscroll-y-contain touch-pan-y'} style={isDesktop ? undefined : { WebkitOverflowScrolling: 'touch' }}>
+                            {selectedPoint ? (
+                                <StationInfoContent
+                                    stationName={selectedPoint.name}
+                                    ridesCount={rides.length}
+                                    selectedMonth={selectedMonth}
+                                    selectedYear={selectedYear}
+                                    selectedMonthNum={selectedMonthNum}
+                                    stats={stats}
+                                    loadingRides={loadingRides}
+                                    routesLoading={routesLoading}
+                                    routesTotal={routesTotal}
+                                    isCurrentMonth={isCurrentMonth()}
+                                    availableMonths={availableMonths}
+                                    onPreviousMonth={handlePreviousMonth}
+                                    onNextMonth={handleNextMonth}
+                                    onMonthChange={handleMonthChange}
+                                    onRefreshMonths={refreshAvailableMonths}
+                                />
+                            ) : (
+                                <AboutInfo
+                                    isDesktop={isDesktop}
+                                    availableMonths={availableMonths}
+                                    selectedMonth={selectedMonth}
+                                    onSelectStation={(station, yearMonth) => {
+                                        setSelectedYearMonth(yearMonth);
+                                        latestMonthInitializedStation.current = station.shortName;
+                                        setSelectedPoint({
+                                            id: station.id,
+                                            short_name: station.shortName,
+                                            name: station.name,
+                                            coordinates: station.coordinates,
+                                        });
+                                    }}
+                                />
+                            )}
 
-                        <div className="mt-8 pt-6">
-                            <div className="text-xs text-muted-foreground space-y-2">
-                                <div>
-                                    {selectedPoint && (
-                                        <a href="#" className="text-gray-300 hover:text-white transition-colors"
-
-                                           onClick={(e) => {
-                                               e.preventDefault();
-                                               // unselect station
-                                               setSelectedPoint(null);
-                                           }}
-                                        >
-                                            About <span className="mx-2">·</span>
-                                        </a>
-                                    )}
-                                    <span>Not affiliated with BayWheels, Lyft, MTC, or Motivate.</span>
-                                </div>
-                                <div>
-                                    <span><a href={"https://samjeffs.net"} target={'_blank'}>made with ♥️ in 🌉 by sam 🐱</a></span>
+                            <div className="mt-8 pt-6">
+                                <div className="text-xs text-muted-foreground space-y-2">
+                                    <div>
+                                        {selectedPoint && (
+                                            <a href="#" className="text-gray-300 hover:text-white transition-colors"
+                                               onClick={(e) => {
+                                                   e.preventDefault();
+                                                   // unselect station
+                                                   setSelectedPoint(null);
+                                               }}
+                                            >
+                                                About <span className="mx-2">·</span>
+                                            </a>
+                                        )}
+                                        <span>Not affiliated with BayWheels, Lyft, MTC, or Motivate.</span>
+                                    </div>
+                                    <div>
+                                        <span><a href={"https://samjeffs.net"} target={'_blank'}>made with ♥️ in 🌉 by sam 🐱</a></span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
