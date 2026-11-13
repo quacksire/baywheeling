@@ -1,0 +1,1 @@
+-- Indexes are created separately in create-indexes.sql after data loading

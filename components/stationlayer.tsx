@@ -3,7 +3,7 @@ import * as baywheelStations from "@/data/baywheels_station_information.json"
 import {gbfsStationInfoToGeoJSON} from "@/utils/gbfsStationInfoToGeoJSON";
 import { polyline } from "@/lib/polyline";
 import { Layers, X, Loader2, Clock, Route, ChevronUp, ChevronDown, Link } from "lucide-react";
-import { useCallback, useEffect, useState, useId } from "react";
+import { useCallback, useEffect, useRef, useState, useId } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useMap, MapPopup, MapMarker, MarkerContent, MarkerLabel } from "@/components/ui/map";
 import { DeckGLRoutes } from "@/components/deck-gl-routes";
@@ -12,13 +12,19 @@ import { Drawer, DrawerTrigger, DrawerContent, DrawerTitle } from "@/components/
 import { AboutInfo } from "@/components/about-info";
 
 interface Ride {
-    ride_id: string;
-    rideable_type: string;
-    started_at: string;
-    end_station_name: string;
+    ride_id?: string;
+    rideable_type: string | null;
+    started_at: string | null;
+    start_station_name?: string;
+    end_station_name: string | null;
     start_station_id?: string;
     end_station_id?: string;
+    start_lat?: number | null;
+    start_lng?: number | null;
+    end_lat?: number | null;
+    end_lng?: number | null;
     route_polyline?: string | null;
+    ride_count?: number;
 }
 
 interface RouteData {
@@ -28,11 +34,12 @@ interface RouteData {
 }
 
 interface CachedRoute {
-    rideId: string;
+    routeKey: string; // start_station_id:end_station_id
     coordinates: [number, number][];
     duration: number;
     distance: number;
-    endStationName: string;
+    endStationName: string | null;
+    rideCount: number; // Number of rides using this route
 }
 
 interface StationStats {
@@ -40,6 +47,8 @@ interface StationStats {
     member_count: number;
     casual_count: number;
     false_starts: number;
+    avg_ride_seconds: number | null;
+    longest_ride_seconds: number | null;
     rideableTypes: Array<{ rideable_type: string; count: number }>;
     dayOfWeek: Array<{ day_num: string; count: number }>;
     destinations: Array<{ end_station_name: string; count: number }>;
@@ -59,6 +68,22 @@ interface SelectedPoint {
     name: string;
     coordinates: [number, number];
     [key: string]: any;
+}
+
+function monthIndex(yearMonth: string) {
+    const [year, month] = yearMonth.split('-').map((value) => parseInt(value, 10));
+    return year * 12 + month;
+}
+
+function nearestAvailableMonth(targetMonth: string, availableMonths: string[]) {
+    if (!availableMonths.length) return null;
+    if (availableMonths.includes(targetMonth)) return targetMonth;
+
+    const targetIndex = monthIndex(targetMonth);
+    return [...availableMonths].sort((a, b) => {
+        const distance = Math.abs(monthIndex(a) - targetIndex) - Math.abs(monthIndex(b) - targetIndex);
+        return distance || monthIndex(a) - monthIndex(b);
+    })[0];
 }
 
 
@@ -85,10 +110,19 @@ export function StationLayer() {
      const [routesLoading, setRoutesLoading] = useState(0);
      const [routesTotal, setRoutesTotal] = useState(0);
      const [stats, setStats] = useState<StationStats | null>(null);
+     const [statsLoading, setStatsLoading] = useState(false);
+     const [statsError, setStatsError] = useState(false);
+     const [discoveredMonths, setDiscoveredMonths] = useState<string[]>([]);
      const [selectedYear, setSelectedYear] = useState<string>('');
      const [selectedMonthNum, setSelectedMonthNum] = useState<string>('');
      const [drawerOpen, setDrawerOpen] = useState(true);
+     const latestMonthInitializedStation = useRef<string | null>(null);
      const selectedMonth = selectedYear && selectedMonthNum ? `${selectedYear}-${selectedMonthNum}` : '';
+     const availableMonths = discoveredMonths;
+
+     useEffect(() => {
+         console.log(selectedPoint);
+     }, [selectedPoint])
 
      // Calculate current month (previous month from today)
       const getCurrentMonth = useCallback(() => {
@@ -101,36 +135,40 @@ export function StationLayer() {
       }, []);
 
      const isCurrentMonth = useCallback(() => {
-         const current = getCurrentMonth();
-         return selectedYear === current.year && selectedMonthNum === current.month;
-     }, [selectedYear, selectedMonthNum, getCurrentMonth]);
+         const latest = availableMonths[availableMonths.length - 1];
+         if (!latest) {
+             const current = getCurrentMonth();
+             return selectedYear === current.year && selectedMonthNum === current.month;
+         }
+         return selectedMonth === latest;
+     }, [availableMonths, selectedMonth, selectedYear, selectedMonthNum, getCurrentMonth]);
+
+     const setSelectedYearMonth = useCallback((yearMonth: string) => {
+         if (!/^\d{4}-\d{2}$/.test(yearMonth)) return;
+         const [year, month] = yearMonth.split('-');
+         setSelectedYear(year);
+         setSelectedMonthNum(month);
+     }, []);
+
+     const handleMonthChange = (yearMonth: string) => {
+         const nextMonth = nearestAvailableMonth(yearMonth, availableMonths);
+         if (nextMonth) {
+             setSelectedYearMonth(nextMonth);
+         }
+     };
 
      const handlePreviousMonth = () => {
-         let year = parseInt(selectedYear);
-         let month = parseInt(selectedMonthNum);
-
-         month--;
-         if (month === 0) {
-             month = 12;
-             year--;
+         const index = availableMonths.indexOf(selectedMonth);
+         if (index > 0) {
+             setSelectedYearMonth(availableMonths[index - 1]);
          }
-
-         setSelectedYear(year.toString());
-         setSelectedMonthNum(month.toString().padStart(2, '0'));
      };
 
      const handleNextMonth = () => {
-         let year = parseInt(selectedYear);
-         let month = parseInt(selectedMonthNum);
-
-         month++;
-         if (month === 13) {
-             month = 1;
-             year++;
+         const index = availableMonths.indexOf(selectedMonth);
+         if (index >= 0 && index < availableMonths.length - 1) {
+             setSelectedYearMonth(availableMonths[index + 1]);
          }
-
-         setSelectedYear(year.toString());
-         setSelectedMonthNum(month.toString().padStart(2, '0'));
      };
     const [stationMap] = useState<StationInfo>(() => {
         const map: StationInfo = {};
@@ -243,31 +281,103 @@ export function StationLayer() {
     }, [selectedPoint, isDesktop]);
 
 
-    // Reset to current month when station is selected
+    const refreshAvailableMonths = useCallback(() => {
+        fetch('/api/months')
+            .then((res) => res.json())
+            .then((data: any) => {
+                if (!Array.isArray(data.months)) return;
+                const months = data.months
+                    .filter((month: unknown): month is string => typeof month === 'string' && /^\d{4}-\d{2}$/.test(month))
+                    .sort();
+                setDiscoveredMonths(months);
+            })
+            .catch((error) => {
+                console.error('Error fetching available months:', error);
+            });
+    }, []);
+
     useEffect(() => {
-        if (selectedPoint) {
-            const current = getCurrentMonth();
-            setSelectedYear(current.year);
-            setSelectedMonthNum(current.month);
+        refreshAvailableMonths();
+    }, [refreshAvailableMonths]);
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                refreshAvailableMonths();
+            }
+        };
+
+        const handleFocus = () => {
+            refreshAvailableMonths();
+        };
+
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [refreshAvailableMonths]);
+
+    useEffect(() => {
+        if (availableMonths.length && (!selectedMonth || !availableMonths.includes(selectedMonth))) {
+            const nextMonth = selectedMonth
+                ? nearestAvailableMonth(selectedMonth, availableMonths)
+                : availableMonths[availableMonths.length - 1];
+
+            if (nextMonth) {
+                setSelectedYearMonth(nextMonth);
+            }
         }
-    }, [selectedPoint, getCurrentMonth]);
+    }, [availableMonths, selectedMonth, setSelectedYearMonth]);
+
+    // Reset to latest available month when station is selected
+    useEffect(() => {
+        const stationKey = selectedPoint?.short_name ?? selectedPoint?.id ?? null;
+        if (!stationKey) {
+            latestMonthInitializedStation.current = null;
+            return;
+        }
+
+        if (latestMonthInitializedStation.current === stationKey) {
+            return;
+        }
+
+        const latest = availableMonths[availableMonths.length - 1];
+        if (latest) {
+            setSelectedYearMonth(latest);
+            latestMonthInitializedStation.current = stationKey;
+        }
+    }, [selectedPoint, availableMonths, setSelectedYearMonth]);
 
     // Initialize current month on mount
     useEffect(() => {
+        if (selectedMonth) return;
+
+        const latest = availableMonths[availableMonths.length - 1];
+        if (latest) {
+            setSelectedYearMonth(latest);
+            return;
+        }
         const current = getCurrentMonth();
         setCurrentMonth(current);
-        setSelectedYear(current.year);
-        setSelectedMonthNum(current.month);
-    }, [getCurrentMonth]);
+        setSelectedYearMonth(`${current.year}-${current.month}`);
+    }, [availableMonths, getCurrentMonth, selectedMonth, setSelectedYearMonth]);
 
     useEffect(() => {
         if (!selectedPoint || !selectedMonth) return;
+
+        const abortController = new AbortController();
+        const { signal } = abortController;
 
         // Clear old routes when selecting new station or month
         setCachedRoutes(new Map());
         setRoutesLoading(0);
         setRoutesTotal(0);
         setStats(null);
+        setStatsLoading(true);
+        setStatsError(false);
 
         setLoadingRides(true);
         setSelectedRideIndex(0);
@@ -279,8 +389,11 @@ export function StationLayer() {
         ridesUrl.searchParams.set('year_month', selectedMonth);
 
         // Fetch rides
-        fetch(ridesUrl.toString())
-            .then(res => res.json())
+        fetch(ridesUrl.toString(), { signal })
+            .then(res => {
+                if (!res.ok) throw new Error(`Ride request failed with ${res.status}`);
+                return res.json();
+            })
             .then((data: any) => {
                 if (data.error) {
                     console.error('API Error:', data.error);
@@ -294,23 +407,28 @@ export function StationLayer() {
                 }
             })
             .catch(err => {
+                if (err instanceof DOMException && err.name === 'AbortError') return;
                 console.error('Error fetching rides:', err);
                 setRides([]);
             })
-            .finally(() => setLoadingRides(false));
+            .finally(() => {
+                if (!signal.aborted) setLoadingRides(false);
+            });
 
         // Fetch station stats (streams as they come in)
         const statsUrl = new URL('/api/station-stats', window.location.origin);
         statsUrl.searchParams.set('station_id', selectedPoint?.short_name);
         statsUrl.searchParams.set('year_month', selectedMonth);
 
-        fetch(statsUrl.toString())
+        fetch(statsUrl.toString(), { signal })
             .then(res => {
+                if (!res.ok) throw new Error(`Stats request failed with ${res.status}`);
                 if (!res.body) throw new Error('No response body');
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
                 const partialStats: Partial<StationStats> = {};
+                let completed = false;
 
                 const processStream = async () => {
                     while (true) {
@@ -338,6 +456,7 @@ export function StationLayer() {
                                         partialStats.busiestHours = message.data;
                                     } else if (message.type === 'complete') {
                                         // All stats loaded
+                                        completed = true;
                                         setStats(partialStats as StationStats);
                                     }
 
@@ -351,13 +470,22 @@ export function StationLayer() {
                             }
                         }
                     }
+
+                    if (!completed) throw new Error('Stats stream ended before completion');
                 };
 
                 return processStream();
             })
             .catch(err => {
+                if (err instanceof DOMException && err.name === 'AbortError') return;
                 console.error('Error fetching station stats:', err);
+                setStatsError(true);
+            })
+            .finally(() => {
+                if (!signal.aborted) setStatsLoading(false);
             });
+
+        return () => abortController.abort();
     }, [selectedPoint, selectedMonth]);
 
 
@@ -369,78 +497,113 @@ export function StationLayer() {
         const abortController = new AbortController();
         const signal = abortController.signal;
 
-        const newCached = new Map(cachedRoutes);
-        const cachedCount = 0;
-
-        // Count rides that already have polylines in D1
-        const cachedRides: Ride[] = [];
-        const uncachedRides: Ride[] = [];
-
+        const newCached = new Map<string, CachedRoute>();
+        const routeGroups = new Map<string, Ride[]>();
         rides.forEach((ride) => {
-            if (ride.route_polyline && typeof ride.route_polyline === 'string' && ride.route_polyline.length > 0) {
-                cachedRides.push(ride);
-            } else {
-                uncachedRides.push(ride);
-            }
+            if (!ride.start_station_id || !ride.end_station_id) return;
+            const routeKey = `${ride.start_station_id}:${ride.end_station_id}`;
+            const group = routeGroups.get(routeKey) ?? [];
+            group.push(ride);
+            routeGroups.set(routeKey, group);
         });
 
-        setRoutesTotal(rides.length);
-        setRoutesLoading(0);
-        setCachedRoutes(new Map());
-        console.log('Routes loaded:', rides.length, 'Cached count:', cachedRides.length, 'Uncached count:', uncachedRides.length);
+        const routeRideCount = (group: Ride[]) =>
+            group.reduce((total, ride) => total + (ride.ride_count ?? 1), 0);
+        const uncachedRouteGroups = new Map<string, Ride[]>();
+        let cachedRouteCount = 0;
+        for (const [routeKey, groupRides] of routeGroups) {
+            const ride = groupRides[0];
+            if (!ride.route_polyline) {
+                uncachedRouteGroups.set(routeKey, groupRides);
+                continue;
+            }
 
-        // Add all cached routes immediately
-        cachedRides.forEach((ride) => {
             try {
-                const geojsonGeometry = polyline.toGeoJSON(ride.route_polyline!);
-                const routeData = {
-                    coordinates: geojsonGeometry.coordinates,
+                const geometry = polyline.toGeoJSON(ride.route_polyline);
+                newCached.set(routeKey, {
+                    routeKey,
+                    coordinates: geometry.coordinates,
                     duration: 0,
                     distance: 0,
-                };
-                newCached.set(ride.ride_id, {
-                    rideId: ride.ride_id,
-                    ...routeData,
                     endStationName: ride.end_station_name,
+                    rideCount: routeRideCount(groupRides),
                 });
-            } catch (err) {
-                console.warn('Error converting polyline for ride', ride.ride_id, err);
+                cachedRouteCount++;
+            } catch (error) {
+                console.warn('Error converting polyline for route', routeKey, error);
+                uncachedRouteGroups.set(routeKey, groupRides);
             }
-        });
-        setCachedRoutes(newCached);
-        setRoutesLoading(cachedRides.length);
-        if (map) map.triggerRepaint();
+        }
 
-        // Concurrency limiter - limit to 10 parallel requests for uncached routes only
-        const concurrencyLimit = 10;
+        setRoutesTotal(routeGroups.size);
+        setRoutesLoading(cachedRouteCount);
+        setCachedRoutes(newCached);
+        const uncachedRouteEntries = Array.from(uncachedRouteGroups.entries());
+
+        // Concurrency limiter - these requests go through /api/route, which checks KV/D1 route caches first.
+        const concurrencyLimit = 20;
         let activeRequests = 0;
         let queueIndex = 0;
 
         const processQueue = () => {
-            while (activeRequests < concurrencyLimit && queueIndex < uncachedRides.length) {
-                const ride = uncachedRides[queueIndex];
+            while (activeRequests < concurrencyLimit && queueIndex < uncachedRouteEntries.length) {
+                const [routeKey, groupRides] = uncachedRouteEntries[queueIndex];
+                const ride = groupRides[0];
                 queueIndex++;
 
-                if (!ride.start_station_id || !ride.end_station_id) {
-                    setRoutesLoading(prev => prev + 1);
-                    continue;
-                }
+                let startStation = ride.start_station_id ? stationMap[ride.start_station_id] : undefined;
+                 let endStation = ride.end_station_id ? stationMap[ride.end_station_id] : undefined;
 
-                const startStation = stationMap[ride.start_station_id];
-                const endStation = stationMap[ride.end_station_id];
+                 if (!startStation && ride.start_lat != null && ride.start_lng != null) {
+                     startStation = { lat: ride.start_lat, lon: ride.start_lng, name: '' };
+                 }
+                 if (!endStation && ride.end_lat != null && ride.end_lng != null) {
+                     endStation = { lat: ride.end_lat, lon: ride.end_lng, name: ride.end_station_name || '' };
+                 }
 
-                if (!startStation || !endStation) {
-                    setRoutesLoading(prev => prev + 1);
-                    continue;
-                }
+                 if (!startStation && selectedPoint) {
+                     startStation = {
+                         lat: selectedPoint.coordinates[1],
+                         lon: selectedPoint.coordinates[0],
+                         name: selectedPoint.name,
+                     };
+                 }
+
+                 // If stations not found by ID, try to find by name in stationMap
+                 if (!startStation && ride.start_station_name) {
+                     startStation = Object.values(stationMap).find(s => s.name === ride.start_station_name);
+                 }
+                 if (!endStation && ride.end_station_name) {
+                     endStation = Object.values(stationMap).find(s => s.name === ride.end_station_name);
+                 }
+
+                 if (!startStation || !endStation) {
+                      setRoutesLoading(prev => prev + 1);
+                      continue;
+                  }
 
                 activeRequests++;
 
-                // Fetch from API (will check D1 cache and save if needed)
-                fetch(
-                    `/api/route?start_lon=${startStation.lon}&start_lat=${startStation.lat}&end_lon=${endStation.lon}&end_lat=${endStation.lat}&ride_id=${encodeURIComponent(ride.ride_id)}`,
-                    { signal }
-                )
+                 const routeUrl = new URL('/api/route', window.location.origin);
+                routeUrl.searchParams.set('start_lon', startStation.lon.toString());
+                routeUrl.searchParams.set('start_lat', startStation.lat.toString());
+                routeUrl.searchParams.set('end_lon', endStation.lon.toString());
+                routeUrl.searchParams.set('end_lat', endStation.lat.toString());
+                routeUrl.searchParams.set('start_station_id', ride.start_station_id || '');
+                routeUrl.searchParams.set('end_station_id', ride.end_station_id || '');
+                routeUrl.searchParams.set('year_month', selectedMonth);
+
+                const requestController = new AbortController();
+                let timedOut = false;
+                const abortRequest = () => requestController.abort();
+                const timeout = window.setTimeout(() => {
+                    timedOut = true;
+                    requestController.abort();
+                }, 8_000);
+                signal.addEventListener('abort', abortRequest, { once: true });
+
+                // Fetch from API (will check D1/KV cache and save if needed)
+                fetch(routeUrl.toString(), { signal: requestController.signal })
                     .then(res => res.json())
                     .then((data: any) => {
                         if (signal.aborted) return;
@@ -453,28 +616,38 @@ export function StationLayer() {
                                 distance: route.distance,
                             };
 
-                            newCached.set(ride.ride_id, {
-                                rideId: ride.ride_id,
+                            newCached.set(routeKey, {
+                                routeKey,
                                 ...routeData,
                                 endStationName: ride.end_station_name,
+                                rideCount: routeRideCount(groupRides),
                             });
-                            console.log('Added route for ride', ride.ride_id, 'Cache size now:', newCached.size);
+                            console.log('Added route for ride', ride.ride_id, 'between', routeKey);
                             setCachedRoutes(new Map(newCached));
                             if (map) map.triggerRepaint();
 
                             setRoutesLoading(prev => prev + 1);
                         } else {
                             console.warn('No routes in response for ride', ride.ride_id, data);
+                            setRoutesLoading(prev => prev + 1);
                         }
                     })
                     .catch(err => {
-                        if (err.name === 'AbortError') return;
-                        console.error('Error fetching route:', err);
+                        if (signal.aborted) return;
+                        if (err.name === 'AbortError' && timedOut) {
+                            console.warn('Route request timed out for ride', ride.ride_id);
+                        } else {
+                            console.error('Error fetching route for ride', ride.ride_id, err);
+                        }
                         setRoutesLoading(prev => prev + 1);
                     })
                     .finally(() => {
+                        window.clearTimeout(timeout);
+                        signal.removeEventListener('abort', abortRequest);
                         activeRequests--;
-                        processQueue();
+                        if (!signal.aborted) {
+                            processQueue();
+                        }
                     });
             }
         };
@@ -484,7 +657,14 @@ export function StationLayer() {
         return () => {
             abortController.abort();
         };
-    }, [rides, loadingRides, stationMap, selectedPoint?.id]);
+    }, [rides, loadingRides, stationMap, selectedPoint?.id, selectedMonth]);
+
+    useEffect(() => {
+        // Trigger repaint when cachedRoutes changes to ensure deck.gl updates
+        if (map) {
+            map.triggerRepaint();
+        }
+    }, [cachedRoutes]);
 
     return (
          <>
@@ -533,17 +713,22 @@ export function StationLayer() {
                         {selectedPoint ? (
                             <StationInfoContent
                                 stationName={selectedPoint.name}
-                                ridesCount={rides.length}
+                                ridesCount={rides.reduce((total, ride) => total + (ride.ride_count ?? 1), 0)}
                                 selectedMonth={selectedMonth}
                                 selectedYear={selectedYear}
                                 selectedMonthNum={selectedMonthNum}
                                 stats={stats}
+                                statsLoading={statsLoading}
+                                statsError={statsError}
                                 loadingRides={loadingRides}
                                 routesLoading={routesLoading}
                                 routesTotal={routesTotal}
                                 isCurrentMonth={isCurrentMonth()}
+                                availableMonths={availableMonths}
                                 onPreviousMonth={handlePreviousMonth}
                                 onNextMonth={handleNextMonth}
+                                onMonthChange={handleMonthChange}
+                                onRefreshMonths={refreshAvailableMonths}
                             />
                         ) : (
                             <AboutInfo isDesktop={isDesktop} />

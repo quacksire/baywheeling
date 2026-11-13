@@ -5,11 +5,12 @@ import { PathLayer } from '@deck.gl/layers';
 import { useMap } from '@/components/ui/map';
 
 interface RouteData {
-  rideId: string;
+  routeKey: string;
   coordinates: [number, number][];
   duration: number;
   distance: number;
-  endStationName: string;
+  endStationName: string | null;
+  rideCount: number;
 }
 
 interface DeckGLRoutesProps {
@@ -38,8 +39,14 @@ export function DeckGLRoutes({
     // Convert routes Map to array format for deck.gl
     const routesArray = Array.from(routes.values()).map((route) => ({
       path: route.coordinates,
-      id: route.rideId,
+      id: route.routeKey,
+      rideCount: route.rideCount,
     }));
+
+    // Scale route thickness by ridership while keeping busy lines bounded.
+    const getRouteWidth = (d: any) => {
+      return 1 + Math.min(2, Math.log10(Math.max(1, d.rideCount)) * 0.5);
+    };
 
     // Create or update deck.gl instance
     if (!deckRef.current) {
@@ -64,7 +71,7 @@ export function DeckGLRoutes({
             widthMinPixels: 2,
             getPath: (d: any) => d.path,
             getColor: () => [color[0], color[1], color[2], opacity],
-            getWidth: () => 1,
+            getWidth: getRouteWidth,
           }),
         ],
       });
@@ -80,7 +87,7 @@ export function DeckGLRoutes({
             widthMinPixels: 2,
             getPath: (d: any) => d.path,
             getColor: () => [color[0], color[1], color[2], opacity],
-            getWidth: () => 1,
+            getWidth: getRouteWidth,
           }),
         ],
       });

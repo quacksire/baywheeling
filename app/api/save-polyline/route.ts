@@ -85,11 +85,32 @@ export async function POST(request: NextRequest) {
       await kv.put(routeKey, polyline);
     }
 
-    // Save to D1
-    await db
-      .prepare('UPDATE rides SET route_polyline = ? WHERE ride_id = ?')
-      .bind(polyline, ride_id)
-      .run();
+    // Get all month tables to find the ride
+    const tableQuery = `
+      SELECT name FROM sqlite_master 
+      WHERE type='table' AND name LIKE 'rides_%'
+      ORDER BY name DESC
+    `;
+    
+    const tableResult = await db.prepare(tableQuery).all() as any;
+    const tables = (tableResult.results || []).map((r: any) => r.name);
+
+    // Try to find and update the ride in each month table
+    let found = false;
+    for (const table of tables) {
+      const updateQuery = `UPDATE ${table} SET route_polyline = ? WHERE ride_id = ?`;
+      const result = await db.prepare(updateQuery).bind(polyline, ride_id).run() as any;
+      
+      // Check if any rows were affected
+      if (result.meta?.changes && result.meta.changes > 0) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      console.warn(`Ride ${ride_id} not found in any month table`);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -10,7 +10,7 @@ export default function About() {
             ← Back to Map
           </Link>
           <h1 className="text-4xl sm:text-5xl font-bold mb-2">Baywheeling</h1>
-          <p className="text-gray-400">Exploring Bay Area bike-share patterns with open data</p>
+          <p className="text-gray-400">A closer look at how BayWheels moves through the Bay.</p>
         </div>
 
         {/* About Section */}
@@ -18,18 +18,18 @@ export default function About() {
           <section>
             <h2 className="text-2xl font-semibold text-white mb-4">About</h2>
             <p className="leading-relaxed">
-              Baywheeling is an interactive visualization of Bay Area Bike Share (now Baywheels) trip patterns. 
-              Pick a dock to explore ride trends, peak hours, popular destinations, and usage patterns by bike type. 
-              The data includes anonymized historical trip records from the bike-sharing system.
+              Baywheeling is a map-first way to explore BayWheels trip patterns. Pick a dock to see ride totals,
+              busiest hours, bike mix, and the destinations that show up most often. The data comes from anonymized
+              historical trip records published by the system.
             </p>
           </section>
 
           <section>
             <h2 className="text-2xl font-semibold text-white mb-4">How It Works</h2>
             <p className="leading-relaxed">
-              Click on any station on the map to see statistics for that location. Navigate through different months 
-              to see how patterns change seasonally. The visualization shows ride counts, false starts, bike type usage, 
-              busiest hours, day-of-week patterns, and top destinations from each dock.
+              Click any station to open its monthly snapshot. Move across different months to spot seasonal shifts
+              and neighborhood patterns. The map pairs station stats with estimated route lines so you can compare
+              what changes over time and what stays steady.
             </p>
           </section>
 
@@ -39,22 +39,22 @@ export default function About() {
               <li className="flex gap-3">
                 <span className="text-blue-400 flex-shrink-0">•</span>
                 <span>
-                  <strong>Route geometry:</strong> The data only contains start and end stations. Routes are computed 
-                  using OSRM (Open Source Routing Machine) for the shortest path, but actual bike routes may differ.
+                  <strong>Route geometry:</strong> The data only includes start and end stations. Routes are estimated
+                  with OSRM, so the line on the map is a best guess rather than a recorded trip trace.
                 </span>
               </li>
               <li className="flex gap-3">
                 <span className="text-blue-400 flex-shrink-0">•</span>
                 <span>
-                  <strong>Same-station trips:</strong> Rides that start and end at the same station are excluded 
-                  since route geometry is ambiguous.
+                  <strong>Same-station trips:</strong> Rides that start and end at the same station are excluded
+                  because there is no reliable way to draw a route for them.
                 </span>
               </li>
               <li className="flex gap-3">
                 <span className="text-blue-400 flex-shrink-0">•</span>
                 <span>
-                  <strong>Data availability:</strong> Historical data is limited to available public records from 
-                  the bike-sharing system.
+                  <strong>Data availability:</strong> Historical coverage is limited to the public data released by
+                  the bike-share system.
                 </span>
               </li>
             </ul>
@@ -85,7 +85,7 @@ export default function About() {
               </li>
               <li className="flex gap-3">
                 <span className="text-blue-400 flex-shrink-0">→</span>
-                <span><strong>Visualization:</strong> Deck.gl + Recharts</span>
+                <span><strong>Visualization:</strong> Deck.gl + Dither Kit</span>
               </li>
             </ul>
           </section>
@@ -93,9 +93,9 @@ export default function About() {
           <section>
             <h2 className="text-2xl font-semibold text-white mb-4">Why</h2>
             <p className="leading-relaxed">
-              I built this project as a student at San José State University to combine my interests in data visualization, 
-              web development, and understanding urban mobility. It's a way to explore both the technical challenges of 
-              building performant real-time visualizations and the story that data can tell about our city.
+              I built this project as a student at San Jose State University to combine data visualization, web
+              development, and curiosity about how people move around the Bay. It is both a technical playground and
+              a local map of patterns that are easy to miss in a spreadsheet.
             </p>
           </section>
 
